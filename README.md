@@ -118,3 +118,50 @@ The imports in the scripts themselves spell the full path out.
 
 `shot.mjs` / `shots.mjs` need `npm install` (they use `puppeteer-core` against
 the installed Edge) and a running `serve.mjs`.
+
+## AI usage
+
+This repository's own log is three commits, all on 2026-09-04 and all carrying a
+`Co-Authored-By: Claude Opus 5` trailer, but they are only the split — lifting
+these files out of the explorer, repointing their imports at the submodule and
+moving the pin. The scripts themselves were written before that, in the
+explorer's repository, across the 35 commits of 2026-08-31 to 2026-09-03 that
+are AI co-authored without exception. That per-commit record is in neither
+repository: every commit before the last carried 2 MB of the game's own texture
+RAM, so rather than publish it the explorer starts at a single commit, and these
+files arrived here in one more.
+
+**What AI did.** Wrote all of it. The thirteen `test-*.mjs`, the i960
+disassembler, the five MAME drivers and the six Lua scripts that are their
+in-emulator halves, the display-list decoders, the texture-RAM manifest and the
+server were written in Claude Code sessions, and so was the split that made them
+a repository.
+
+**What AI did not provide.**
+
+- *The reverse engineering.* No model touched it. `stfdecomp` is 100% human
+  reversed and written, and it predates all of this. Every ROM address, table
+  layout and routine name these checks assert against was worked out by hand;
+  when `test-objects.mjs` says a stage runs what its record's object table
+  names, that table was read by a person first. Take that away and there is
+  nothing here to check anything with.
+- *The verdict on whether any of it is right.* This is the part worth being
+  plain about, because these files **are** the measuring apparatus, and a check
+  written by the same model that wrote the code it checks proves nothing on its
+  own. What makes them worth anything is that they do not measure the port
+  against itself. They measure it against MAME: texture RAM and both colour
+  tables byte-exact against a capture of a running machine, the viewer's draw
+  list against display lists captured off the board, the decoded motion against
+  the arguments the board actually posed a fighter with. `make-texref.mjs`
+  refuses any directory `extract-texram.mjs` wrote, for exactly this reason — a
+  reference rebuilt from the port would be the port grading itself. Where there
+  is no capture to measure against — the Egg robots' two animations — the check
+  says so and holds the port against the instruction stream instead.
+  `test-head-mame.mjs` is incomplete, says so in its own header, and is kept out
+  of `npm test` rather than reported as a pass.
+- *The recordings.* `canyon-path.csv`, `motion-pose.csv` and the osage JSON are
+  not generated. Each is a capture of a real board under MAME, kept so a check
+  runs without one; a check whose recording is missing skips rather than
+  inventing it.
+- *Direction.* Which result was worth believing, which was a plausible first
+  answer that measurement refused, and what to build next was mine.
