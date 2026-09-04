@@ -30,6 +30,14 @@ Everything is run from the repository root — `node test-decode.mjs`, not from 
 subdirectory — since that is where a check looks for `sfight.zip` and for the
 captures beside it.
 
+`npm start` serves the pinned submodule. To work on the explorer itself, point
+the server at that working checkout instead, or the fixed commit is what you
+will see:
+
+```sh
+STF_SITE=../noclip npm start
+```
+
 ### The ROM
 
 `npm test` needs `sfight.zip` in the repository root and nothing else. It is
@@ -54,7 +62,7 @@ The imports in the scripts themselves spell the full path out.
 
 | script | what it does |
 |--------|--------------|
-| `serve.mjs` | zero-dependency static server on :8173, serving the explorer out of `vendor/noclip` rather than this repository; refuses `.zip` so the app can only ever get a ROM set from the user, and so a ROM sitting in this checkout is not on the port either |
+| `serve.mjs` | zero-dependency static server on :8173, serving the explorer out of `vendor/noclip` rather than this repository — `$STF_SITE` points it at a working explorer checkout instead, `$PORT` moves it. Refuses `.zip` so the app can only ever get a ROM set from the user, and so a ROM sitting in this checkout is not on the port either |
 | `shot.mjs` | one headless screenshot + console capture, via the system Edge |
 | `shots.mjs` | several screenshots in one browser session, each after a snippet of page JS |
 | `gl-check.mjs` | boots the viewer headlessly and reports the GL context, renderer string and any shader errors — first thing to run when the page comes up blank |

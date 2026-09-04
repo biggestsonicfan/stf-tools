@@ -8,7 +8,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'vendor/noclip');
+/* The submodule by default, so a check and a screenshot are taken against the
+ * explorer this repository is pinned to. $STF_SITE points it at a working
+ * explorer checkout instead, which is what editing the site itself wants — the
+ * submodule is a fixed commit and will not show an uncommitted change. */
+const ROOT = path.resolve(process.env.STF_SITE
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor/noclip'));
 const PORT = Number(process.env.PORT) || 8173;
 
 const MIME = {
