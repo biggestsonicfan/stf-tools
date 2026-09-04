@@ -1,0 +1,7 @@
+node_modules/
+
+# The ROM set is always supplied by the user, never carried here.
+*.zip
+
+# Whatever a machine needs locally and no one else should have.
+.env
