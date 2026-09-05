@@ -26,6 +26,13 @@
  * second thing to be wrong: every region below is a slice of what it assembles,
  * and its own CRC-32 check over each member is what this refuses to write past.
  *
+ * `--cpres` cuts the two DSP coprocessor executables out of the program ROM.
+ * They are the SHARC's, not the i960's, so each comes out three ways: the `.S`
+ * of bytes the decompilation links, the raw blob in the ROM's own word order,
+ * and `_be.bin` — the same 48-bit words big end first, which is the order a
+ * SHARC linker writes and so the form the disassembly's own build has to come
+ * out as. test-cpres.mjs is the check that holds one against the other.
+ *
  * `--split` is the inverse — a region back into the two chips, which is what
  * the decompilation's Makefile does to a linked program ROM before checking it
  * against the real EPROMs. It prints each half's CRC-32 and MD5, the two forms
@@ -39,6 +46,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadRomSet } from './vendor/noclip/js/romset.js';
+import { BLOBS, pmSwap } from './cpres.mjs';
 
 const ROM_DIR = path.join(os.tmpdir(), 'stf-rom');
 
@@ -57,13 +65,9 @@ const REGIONS = [
       what: 'texture ROM' },
 ];
 
-/* The two DSP coprocessor executables, as `data_extract.py --cpres` cuts them:
- * offsets into the program ROM, and the symbols the decompilation links them
- * under. They are the game's own code, so what is written is a .S of bytes. */
-const CPRES = [
-    { file: 'cpres1.S', symbol: '_cpres_data', offset: 0xb6318, length: 0x741c },
-    { file: 'cpres2.S', symbol: '_cpres_data2', offset: 0xbd748, length: 0x490e },
-];
+/* Where the two DSP coprocessor executables are and what they are is
+ * `cpres.mjs`'s, since test-cpres.mjs measures the same two blobs and a second
+ * copy is a second thing to be wrong. */
 const CPRES_BYTES_PER_LINE = 16;
 
 const args = (name) => process.argv
@@ -173,9 +177,13 @@ if (list) {
         console.log(`${r.file.padEnd(14)} ${String(slice(r).length).padStart(9)}  `
             + `${r.region.padEnd(9)}  ${r.what}`);
     }
-    for (const c of CPRES) {
-        console.log(`${c.file.padEnd(14)} ${String(c.length).padStart(9)}  maincpu    `
+    for (const c of BLOBS) {
+        console.log(`${`${c.name}.S`.padEnd(14)} ${String(c.length).padStart(9)}  maincpu    `
             + `DSP coprocessor executable at 0x${c.offset.toString(16)}, as ${c.symbol}`);
+        console.log(`${`${c.name}.bin`.padEnd(14)} ${String(c.length).padStart(9)}  maincpu    `
+            + `  the same bytes raw, in the ROM's own word order`);
+        console.log(`${`${c.name}_be.bin`.padEnd(14)} ${String(c.length).padStart(9)}  maincpu    `
+            + `  and as the SHARC linker writes it, big end of the word first`);
     }
     process.exit(0);
 }
@@ -196,15 +204,25 @@ export function assemblyData(bytes, symbol, bytesPerLine = CPRES_BYTES_PER_LINE)
 }
 
 if (cpres) {
-    for (const c of CPRES) {
+    for (const c of BLOBS) {
         const bytes = rom.maincpu.subarray(c.offset, c.offset + c.length);
         if (bytes.length < c.length) {
-            console.error(`${c.file}: the program ROM ends before 0x${(c.offset + c.length).toString(16)}`);
+            console.error(`${c.name}: the program ROM ends before 0x${(c.offset + c.length).toString(16)}`);
             process.exit(1);
         }
-        const p = path.join(outDir, c.file);
-        fs.writeFileSync(p, assemblyData(bytes, c.symbol));
-        console.log(`${c.file}  ${c.length} bytes at 0x${c.offset.toString(16)} as ${c.symbol}`);
+        /* Three renderings of one blob, under the names the decompilation's
+         * `src/include` already holds them by: the `.S` it links, the raw
+         * bytes in the ROM's own order, and the same words the other way
+         * round — which is the order a SHARC linker writes, and so the form
+         * test-cpres.mjs holds a freshly assembled image against. */
+        const write = (file, data) => {
+            fs.writeFileSync(path.join(outDir, file), data);
+            console.log(`${file.padEnd(14)} ${String(c.length).padStart(6)} bytes`
+                + `  md5 ${md5(data)}`);
+        };
+        write(`${c.name}.S`, assemblyData(bytes, c.symbol));
+        write(`${c.name}.bin`, bytes);
+        write(`${c.name}_be.bin`, pmSwap(bytes));
     }
     console.log(`wrote ${outDir}/`);
     process.exit(0);
