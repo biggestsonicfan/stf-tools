@@ -76,6 +76,9 @@ The imports in the scripts themselves spell the full path out.
 | `make-texref.mjs` | rebuilds that manifest from a real capture. Refuses a directory `extract-texram.mjs` wrote, since a reference built from the port would be the port measuring itself |
 | `extract-texram.mjs` | rebuilds `texram0/1.bin`, `lumaram.bin` and `colorxlat.bin` from a ROM set, so none of them have to be carried here. Writes to a temp directory rather than into the checkout. `--rom`, `--out`, `--stage`, `--fighter` |
 | `test-texaddr.mjs` | checks the tile addressing in the fill shader against `fetch_bilinear_texel` — every tile size, mirrored and not. The shader's copy is GLSL and cannot be imported, so this pins the mapping to the board's rather than to the shader |
+| `scroll.mjs` | the 2D scroll layer — the logos, the HUD, the character-select portraits and the text, none of which are geometry or in the texture ROM. A port of the four `Scroll…_Initialize` walks and the pattern blit that build tile RAM, palette RAM and the name table at runtime, plus the tilemap and 4bpp tile decode on top. Which of the 92 tile-and-colour sets a picture was drawn with is in the code rather than in the tables, so `coverage()` recovers it: the set that uploaded every tile a picture names |
+| `extract-scroll.mjs` | that as files: every one of the 534 pictures as a PNG, paired with the set that covers it. `--list`, `--cell`, `--set`, `--every-set` for each distinct pairing, `--loose` for the brute force over all 48,000 cell/set pairs, `--rom`, `--out-dir`. Writes to a temp directory rather than into the checkout, like `extract-texram.mjs` |
+| `test-scroll.mjs` | the check, and it has no capture to measure against — nothing here records what the board's tile chip held — so it holds the port against the ROM two ways. The routines are not named by address but found, by scanning the program ROM for the instruction that loads each table; then every constant the port carries has to be an operand those routines carry: the 92 sets, 32 bytes to a tile, two colours to a word, the two `…_Initialize2` banks, the palette field's position in a tilemap entry, the name table's row stride and — the one thing a record cannot say, since it holds two bare numbers — which of its dimensions the blit runs across a row. Then the tables: every even index tiles and every odd one colours, every upload inside the RAM it is addressed into, every picture a size a row can hold, and every tile some set uploads. Then all 534 decode against the set that covers them, none painting nothing and none reading a colour its set never wrote |
 | `test-carpet.mjs` | checks the Flying Carpet's flight path, that its world prologue really is the arena's frame, and that the sphynx head follows the look-at `draw_sphynx_head` builds |
 | `test-objects.mjs` | checks the per-stage object routines: that every stage runs what its record's object table names, that the blimp, the reels, the gears, the diamonds and the propellers turn at the rates the listing sets, that the swing and the clouds come back to where they started, that the aurora's texture-point override really does replace the model's own points and slides them half a texel a frame, that its walrus statues are drawn untransformed with their reflection mirrored under them and stand outside the ring, that the Death Egg's Earth is the flat card its transform assumes and its floor's texture points walk u four texels every eighth frame, and that every model named decodes |
 | `canyon-path.csv` | one recording made by `mame-canyon-path.py` below, kept so that check runs without a MAME: what the board wrote into the prologue on every frame of a real ride. `test-canyon.mjs` reads it if it is there |
@@ -114,7 +117,7 @@ The imports in the scripts themselves spell the full path out.
 | `mcp.mjs` | one-shot command against m2-hle2's MCP bridge |
 | `inspect-si.mjs` | dumps the South Island tables and model bounds used to work out the stage draw list |
 | `dump-linear.mjs` | renders a linear 4-bit block of any ROM region as a PNG, for looking at a block whose layout is not yet known |
-| `dumpbank.mjs`, `png.mjs` | decode each 1 MB window of the texture ROM as a Model 2 sheet and write it as a PNG. This is what established that the sheets are packed rather than raw — see the Textures section of TECHNICAL.md |
+| `dumpbank.mjs`, `png.mjs` | decode each 1 MB window of the texture ROM as a Model 2 sheet and write it as a PNG (`png.mjs` writes the greyscale one that wants and the RGBA one `extract-scroll.mjs` does). This is what established that the sheets are packed rather than raw — see the Textures section of TECHNICAL.md |
 
 `shot.mjs` / `shots.mjs` need `npm install` (they use `puppeteer-core` against
 the installed Edge) and a running `serve.mjs`.
@@ -131,7 +134,7 @@ repository: every commit before the last carried 2 MB of the game's own texture
 RAM, so rather than publish it the explorer starts at a single commit, and these
 files arrived here in one more.
 
-**What AI did.** Wrote all of it. The thirteen `test-*.mjs`, the i960
+**What AI did.** Wrote all of it. The fourteen `test-*.mjs`, the i960
 disassembler, the five MAME drivers and the six Lua scripts that are their
 in-emulator halves, the display-list decoders, the texture-RAM manifest and the
 server were written in Claude Code sessions, and so was the split that made them
