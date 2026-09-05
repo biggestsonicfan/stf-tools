@@ -67,6 +67,9 @@ The imports in the scripts themselves spell the full path out.
 | `shots.mjs` | several screenshots in one browser session, each after a snippet of page JS |
 | `gl-check.mjs` | boots the viewer headlessly and reports the GL context, renderer string and any shader errors — first thing to run when the page comes up blank |
 | `shot-upload.mjs` | drives the drop-zone path end to end and asserts the page never requests a `.zip` |
+| `extract-rom.mjs` | splits a ROM set into the board's five regions as files, under the decompilation's own names, so they can be handed to a tool that wants files rather than a module. The interleave is `romset.js`'s — a Model 2 region is two 16-bit EPROMs a halfword at a time, and every region written here is a slice of what that module already assembles, so there is no second copy of which chips make up which — and its CRC-32 check over each member is what this refuses to write past. `--cpres` cuts the two DSP coprocessor executables out of the program ROM as i960 `.byte` arrays; `--split` goes the other way, a region back into the two chips, printing each half's CRC-32 and MD5. `--rom` (repeatable), `--out`, `--region`, `--list`, `--force`. Writes to a temp directory rather than into the checkout, like `extract-texram.mjs` |
+| `csum.mjs` | the board's own ROM checksum, ported. The self-test sums a chip at a time rather than a region at a time — a region is two 16-bit EPROMs interleaved, so the routine adds two bytes, steps four, and its `alignment` argument is which half it starts on — and what it sums is a table of eight records naming the program ROM and both data ROMs as their two chips each. The two words the routine steps over are the program ROM's own two checksums, which cannot be inside the sum that produces them |
+| `test-csum.mjs` | the check, and the one whose reference the game carries itself: eight numbers burnt beside the ROMs by Sega's mastering tools, which a correct port has to arrive at. Nothing is given the routine's address — it is found by the four instructions it opens with, and its table by the one `call` that reaches it — and then every constant the port carries has to be an operand they carry: the two bytes added and four stepped that make it a chip's sum, the halved count, the halfword the alignment starts on, the word address the skips compare against, the 16 bits the total is cut to, and the table's address, stride and length. Then the records: each addressable, each span inside the region it names, each pair the two halves of one region, and the two skipped words exactly the two records that sum the ROM those words are burnt in. Then all eight sums against all eight burnt words |
 | `test-decode.mjs` | decodes every model-table entry and reports counts — the polygon decoder's smoke test |
 | `test-texram.mjs` | verifies the ported unpack routines (`js/texture.js`) byte for byte against a MAME capture of texture RAM, via the digests in `texram-ref.json`. With a real capture on disk (`$STF_TEXRAM`) it reports the differing bytes too |
 | `test-colors.mjs` | verifies the ported colour tables (`js/colors.js`) against the same capture, row by row — which is the unit every one of its comparisons is made in |
@@ -124,17 +127,18 @@ the installed Edge) and a running `serve.mjs`.
 
 ## AI usage
 
-This repository's own log is three commits, all on 2026-09-04 and all carrying a
-`Co-Authored-By: Claude Opus 5` trailer, but they are only the split — lifting
-these files out of the explorer, repointing their imports at the submodule and
-moving the pin. The scripts themselves were written before that, in the
-explorer's repository, across the 35 commits of 2026-08-31 to 2026-09-03 that
-are AI co-authored without exception. That per-commit record is in neither
+This repository's own log is five commits, all on 2026-09-04 and all carrying a
+`Co-Authored-By: Claude Opus 5` trailer. The first three are only the split —
+lifting these files out of the explorer, repointing their imports at the
+submodule and moving the pin; the two after them are the scroll layer and the
+ROM splitter and checksum, written here. The rest were written before that, in
+the explorer's repository, across the 35 commits of 2026-08-31 to 2026-09-03
+that are AI co-authored without exception. That per-commit record is in neither
 repository: every commit before the last carried 2 MB of the game's own texture
 RAM, so rather than publish it the explorer starts at a single commit, and these
 files arrived here in one more.
 
-**What AI did.** Wrote all of it. The fourteen `test-*.mjs`, the i960
+**What AI did.** Wrote all of it. The fifteen `test-*.mjs`, the i960
 disassembler, the five MAME drivers and the six Lua scripts that are their
 in-emulator halves, the display-list decoders, the texture-RAM manifest and the
 server were written in Claude Code sessions, and so was the split that made them

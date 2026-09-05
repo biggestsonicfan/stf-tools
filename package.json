@@ -21,7 +21,7 @@
     "test:osage-mame": "node test-osage-mame.mjs",
     "test:canyon": "node test-canyon.mjs",
     "test:zsort": "node test-zsort.mjs",
-    "test": "npm run test:decode && npm run test:texram && npm run test:colors && npm run test:texaddr && npm run test:scroll && npm run test:carpet && npm run test:objects && npm run test:eggman && npm run test:motion && npm run test:motion-mame && npm run test:osage-mame && npm run test:canyon && npm run test:zsort"
+    "test": "npm run test:csum && npm run test:decode && npm run test:texram && npm run test:colors && npm run test:texaddr && npm run test:scroll && npm run test:carpet && npm run test:objects && npm run test:eggman && npm run test:motion && npm run test:motion-mame && npm run test:osage-mame && npm run test:canyon && npm run test:zsort"
   },
   "keywords": [],
   "author": "",
