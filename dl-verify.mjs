@@ -39,7 +39,7 @@
  */
 
 import fs from 'fs';
-import { loadRomSet, readModelEntry, MODEL_TABLE_COUNT } from './vendor/noclip/js/romset.js';
+import { loadRomSet, readModelEntry } from './vendor/noclip/js/romset.js';
 import { readStageTable } from './vendor/noclip/js/stages.js';
 import {
     buildStageDisplayList, readFrameTables, opsAt, frameModel, stageWorldFrame,
@@ -318,7 +318,7 @@ export async function loadRom(zip) {
  */
 export function meshIndex(rom) {
     const byMesh = new Map();
-    for (let i = 0; i < MODEL_TABLE_COUNT; i++) {
+    for (let i = 0; i < rom.game.modelTable.count; i++) {
         const e = readModelEntry(rom, i);
         if (e.meshPtr && !byMesh.has(e.meshPtr)) {
             byMesh.set(e.meshPtr, { model: i, uvPtr: e.uvPtr });
@@ -330,7 +330,7 @@ export function meshIndex(rom) {
 /** Model table entry -> model index, so a draw can name its model. */
 export function modelIndex(rom) {
     const byEntry = new Map();
-    for (let i = 0; i < MODEL_TABLE_COUNT; i++) {
+    for (let i = 0; i < rom.game.modelTable.count; i++) {
         const e = readModelEntry(rom, i);
         if (!e.meshPtr) continue;
         const k = `${e.uvPtr}/${e.matPtr}/${e.meshPtr}`;
