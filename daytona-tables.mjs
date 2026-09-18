@@ -350,6 +350,54 @@ const regionLen = (src) => (src === 'maincpu' ? code.length : rom.mainData.lengt
     }
 }
 
+/* ---- the courses -------------------------------------------------------- */
+
+/*
+ * A course is a 16x16 grid of 128-unit blocks and one model per block, drawn
+ * with no matrix at all (dsp_area_block). So a course table is 256 consecutive
+ * pointers into the model table and nothing else is, which makes it findable
+ * without reading a line of code: find the run, then find the array that names
+ * the runs. The array is in the data ROM for every build but the 1993 one,
+ * which keeps it in the program ROM, so both are looked in.
+ */
+{
+    const dv = rom.mainDataView;
+    const t = rom.game.modelTable;
+    const M = out.modelTable ?? { offset: t.offset, stride: t.stride, count: t.count };
+    const base = 0x02000000 + M.offset;
+    const end = base + M.count * M.stride;
+    const isEntryPtr = (p) => p >= base && p < end && (p - base) % M.stride === 0;
+
+    /* The longest run of consecutive entry pointers; a course is 256 of them
+     * and the builds all keep their courses back to back. */
+    let best = null, run = -1;
+    for (let off = 0; off + 4 <= rom.mainData.length; off += 4) {
+        if (isEntryPtr(dv.getUint32(off, true))) { if (run < 0) run = off; continue; }
+        if (run >= 0) {
+            const n = (off - run) / 4;
+            if (n >= 256 && (!best || n > best.n)) best = { off: run, n };
+            run = -1;
+        }
+    }
+    if (!best) notes.push('courses: no run of 256 model pointers in the data ROM');
+    else {
+        const count = Math.floor(best.n / 256);
+        out.courseBlocks = { at: best.off, tables: count };
+        /* The array that names them: a word equal to the first table's address,
+         * in either region. */
+        const want = 0x02000000 + best.off;
+        let at = null, source = null;
+        for (let o = 0; o + 4 <= rom.mainData.length && at === null; o += 4) {
+            if (dv.getUint32(o, true) === want) { at = o; source = 'mainData'; }
+        }
+        for (let o = 0; o + 4 <= code.length && at === null; o += 4) {
+            if (cv.getUint32(o, true) === want) { at = o; source = 'maincpu'; }
+        }
+        if (at === null) notes.push('courses: found the block tables but not the array that names them');
+        else out.courses = { source, at };
+    }
+}
+
 /* ---- report -------------------------------------------------------------- */
 
 console.log(`set          ${ROMS.join(' + ')}`);
@@ -390,6 +438,19 @@ if (out.light) {
     console.log(`light        [${out.light.map((v) => v.toFixed(4)).join(', ')}]  `
         + `(${out.viewRecords.count} view records at ${hex(out.viewRecords.at)})`);
 }
+if (out.courses) {
+    const av = out.courses.source === 'maincpu' ? cv : rom.mainDataView;
+    const seen = new Set();
+    const ids = [];
+    for (let c = 0; c < 4; c++) {
+        const p = av.getUint32(out.courses.at + c * 4, true);
+        ids.push(seen.has(p) ? 'repeat' : `${((rom.mainDataView.getUint32(p - 0x02000000, true)
+            - 0x02000000 - (out.modelTable?.offset ?? 0)) / 20)}`);
+        seen.add(p);
+    }
+    console.log(`courses      { source: '${out.courses.source}', at: ${hex(out.courses.at)} } — `
+        + `${out.courseBlocks.tables} block tables at ${hex(out.courseBlocks.at)}, opening on models ${ids.join(', ')}`);
+}
 for (const n of notes) console.log(`note         ${n}`);
 
 if (VERBOSE) console.log('\n' + JSON.stringify(out, null, 2));
@@ -424,6 +485,8 @@ if (CHECK) {
             count: g.lighting.materials.count, stride: g.lighting.materials.stride });
     eq('lighting.light', out.light?.map((v) => Math.round(v * 1e6) / 1e6),
         g.lighting.light.map((v) => Math.round(v * 1e6) / 1e6));
+    eq('stageTable.courses', out.courses,
+        { source: g.stageTable.courses.source, at: g.stageTable.courses.at });
     console.log(bad ? `\n${bad} failed` : '\nevery number the profile carries is one this run found');
     process.exit(bad ? 1 : 0);
 }
