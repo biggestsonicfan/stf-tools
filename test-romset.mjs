@@ -33,7 +33,12 @@ import { loadRomSet } from './vendor/noclip/js/romset.js';
 
 const argv = process.argv.slice(2);
 const force = argv.includes('--force');
-const ROM = argv.find((a) => !a.startsWith('--')) ?? 'sfight.zip';
+/* Several paths, because a set is not always one archive — MAME splits Daytona
+ * USA's 1993 version between the clone and its parent, and loadRomSet looks a
+ * member up across every zip it is handed. */
+const ROMS = argv.filter((a) => !a.startsWith('--'));
+if (!ROMS.length) ROMS.push('sfight.zip');
+const ROM = ROMS.join(' + ');
 
 let bad = 0;
 const fail = (msg) => { console.log(`FAIL: ${msg}`); bad++; };
@@ -65,9 +70,11 @@ console.log(`explorer     vendor/noclip at ${noclipVersion()}`);
 
 /* ---- the set ------------------------------------------------------------- */
 
-if (!fs.existsSync(ROM)) {
-    console.error(`no ROM set at ${ROM} — every check here wants one beside it`);
-    process.exit(1);
+for (const r of ROMS) {
+    if (!fs.existsSync(r)) {
+        console.error(`no ROM set at ${r} — every check here wants one beside it`);
+        process.exit(1);
+    }
 }
 
 const read = (p) => {
@@ -77,7 +84,7 @@ const read = (p) => {
 
 let rom;
 try {
-    rom = await loadRomSet([read(ROM)]);
+    rom = await loadRomSet(ROMS.map(read));
 } catch (e) {
     console.error(`${ROM}: ${e.message}`);
     process.exit(1);
@@ -87,13 +94,19 @@ console.log(`rom set      ${ROM} — ${rom.game.name} (${rom.game.id})`);
 
 /* ---- every member the explorer asked for, against its burnt CRC ---------- */
 
-/* `loadRomSet` splits its complaints between two shapes: a CRC that did not
- * match, and a region it left null because the set does not carry its chips.
- * The second is allowed by design — `optional: true` is there so a set without
- * the coprocessor's data ROM still opens — so only the first is a failure. */
+/* `loadRomSet` splits its complaints between three shapes: a CRC that did not
+ * match, a member whose label in this set is not the one the recipe names but
+ * whose checksum is, and a region it left null because the set does not carry
+ * its chips. Only the first is a failure. The second is how a set spelling its
+ * chips the way an older MAME did still loads, and saying which member was
+ * taken for which is the whole point of reporting it; the third is allowed by
+ * design — `optional: true` is there so a set without the coprocessor's data
+ * ROM still opens. */
 const crc = rom.warnings.filter((w) => w.includes('CRC'));
-const absent = rom.warnings.filter((w) => !w.includes('CRC'));
+const spelled = rom.warnings.filter((w) => w.includes('this set spells it'));
+const absent = rom.warnings.filter((w) => !crc.includes(w) && !spelled.includes(w));
 
+for (const w of spelled) console.log(`renamed      ${w}`);
 for (const w of absent) console.log(`optional     ${w}`);
 
 if (crc.length) {

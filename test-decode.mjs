@@ -12,6 +12,7 @@
  *
  *   node test-decode.mjs                     # sfight.zip beside this file
  *   node test-decode.mjs ../roms/hotd.zip    # any set js/games.js identifies
+ *   node test-decode.mjs a.zip b.zip         # a set split over several archives
  *
  * The named models below are Sonic The Fighters', and are only printed when
  * that is the set — they are a hand check that the numbers are the ones the
@@ -22,15 +23,17 @@ import {loadRomSet} from './vendor/noclip/js/romset.js';
 import {decodeModel} from './vendor/noclip/js/model.js';
 import fs from 'fs';
 
-const ROM = process.argv[2] ?? 'sfight.zip';
+/* Several, because a set is not always one archive: MAME splits Daytona USA's
+ * 1993 version between the clone and its parent, and loadRomSet looks a member
+ * up across every zip it is handed. */
+const ROMS = process.argv.slice(2).length ? process.argv.slice(2) : ['sfight.zip'];
 const rd=p=>{const b=fs.readFileSync(p);return b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);};
 
-if (!fs.existsSync(ROM)) {
-  console.error(`no ROM set at ${ROM}`);
-  process.exit(1);
+for (const r of ROMS) {
+  if (!fs.existsSync(r)) { console.error(`no ROM set at ${r}`); process.exit(1); }
 }
 
-const rom=await loadRomSet([rd(ROM)]);
+const rom=await loadRomSet(ROMS.map(rd));
 const {count} = rom.game.modelTable;
 console.log(`${rom.game.name} — ${count} model table entries`);
 
