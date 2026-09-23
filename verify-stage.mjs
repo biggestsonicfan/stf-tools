@@ -52,15 +52,16 @@
  * the model choices at frame_counter, and the offset is measured rather than
  * fitted: it has to come out constant across the capture or the run is bad.
  *
- * One part is deliberately drawn where the board does not draw it.
- * draw_sphynx_head builds a probe matrix carrying a 1.6 (0x72214), transforms
- * (-7.85, 7, 52) through it to get the head's world position (0x72244), reads
- * that back (0x7225C) — and then draws at the raw constants (0x7237C), with no
- * scale. display.js follows the probe, because that is the position the routine
- * worked out for itself. So the board's own draw sits 1/1.6 as far out, and the
- * comparison undoes that here rather than letting the one part the ROM gets
- * wrong read as a fault in the port. Everything else about the head — the frame
- * in front of it and both aim angles — is still checked exactly.
+ * The sphynx head is drawn from a matrix the stream reads back rather than
+ * builds. draw_sphynx_head loads inner slot 8 (op 0x44) before its translate,
+ * and that slot holds the arena frame at 1.6 — so the board draws the head at
+ * 1.6 x (-7.85, 7, 52), where display.js stands it, and draws the model at 1.6
+ * too, which display.js does not. This check used to divide the position by 1.6
+ * on the viewer's side, taking the draw for the raw constants display.js calls
+ * a ROM bug; that was the replay, which applied no bank loads and so never saw
+ * the 1.6 arrive. m2-hle2's grade-stages.mjs found it with a replay that did.
+ * The head is now compared as display.js builds it, and the missing scale
+ * reads as what it is.
  *
  * The head is also checked for what it can be against a live capture.
  * draw_sphynx_head aims it at the midpoint of the two fighters;
@@ -82,11 +83,12 @@
  */
 
 import {
-    loadCapture, loadRom, modelIndex, meshIndex, replayFrame, boardMatrix,
+    loadCapture, loadRom, modelIndex, meshIndex, replayFrame, boardMatrix, placeAt,
     readStageTable, readFrameTables, buildStageDisplayList, opsAt, frameModel,
     stageWorldFrame,
     mul, inv, maxdiff, rotY, I4,
 } from './dl-verify.mjs';
+import { CopReplay } from './cop-replay.mjs';
 
 const PREFIX = process.argv[2];
 const SLOT = Number(process.argv[3] ?? 0);
@@ -97,8 +99,6 @@ const ROM = process.argv[4] ?? 'sfight.zip';
 const EPS = 1e-5;
 /* draw_sphynx_head's model — the one draw in the game that aims at something. */
 const SPHYNX_HEAD = 322;
-/* The scale its probe applies and its draw omits; see the header. */
-const SPHYNX_SCALE = 1.6;
 
 if (!PREFIX) {
     console.error('usage: node verify-stage.mjs <capture-prefix> [stage] [rom.zip]');
@@ -111,6 +111,14 @@ const byEntry = modelIndex(rom);
 const byMesh = meshIndex(rom);
 const stage = readStageTable(rom)[SLOT];
 const frameTables = readFrameTables(rom);
+/* Whether the backdrop drifts at all: flag bit 0x1B, which doom_cnt tests
+ * before it steps the angle and display.js before it accumulates one. On a
+ * stage with it clear neither side turns the sky, so there is nothing of the
+ * viewer's clock to take off it. */
+const SKY_DRIFTS = (stage.flags >>> 0x1b) & 1;
+/* One replay for the whole capture: a matrix stored into a bank in one frame is
+ * read back out of it in the next. */
+const cop = new CopReplay();
 
 /*
  * Board angles are 16-bit — 0x10000 to the turn — so an angle the viewer holds
@@ -145,20 +153,18 @@ function viewerList(frame, strip = false) {
     return buildStageDisplayList(stage, frameTables).map((e, i) => {
         let ops = opsAt(e, frame);
         const world = carriesWorld(ops, pro);
-        /* Put the head back where the board actually draws it, so the check is
-         * against the hardware and not against our correction of it. */
-        if (e.model === SPHYNX_HEAD) {
-            ops = ops.map((op, k) => (k === pro.length && op[0] === 't'
-                ? ['t', op[1].map((c) => c / SPHYNX_SCALE)]
-                : op));
-        }
         if (strip && world) ops = ops.slice(pro.length);
+        ops = quantise(ops);
+        /* A part that faces the camera (BILLBOARD) has no matrix of its own to
+         * divide out; it is only ever placed, under the base it is drawn at. */
+        const billboard = ops.some((op) => op[0] === 'b');
         return {
             i,
             layer: e.layer,
             world,
             model: e.anim ? frameModel(e.anim, frame) : e.model,
-            m: boardMatrix(quantise(ops)),
+            ops,
+            m: billboard ? null : boardMatrix(ops),
         };
     });
 }
@@ -197,9 +203,10 @@ function describe(d) {
 
 let allOk = true;
 const summary = [];
+let degenerate = 0;
 
 for (const fr of cap.frames) {
-    const { draws, stackLeft, commands } = replayFrame(fr.records, byEntry, byMesh);
+    const { draws, stackLeft, commands } = replayFrame(fr.records, byEntry, byMesh, cop);
     /* Matrices at the arena's clock, model choices at the frame counter — see
      * the header. Off the Flying Carpet the two are the same thing. */
     /* Three clocks, and which one a part is on follows the draw function that
@@ -220,18 +227,28 @@ for (const fr of cap.frames) {
      * once the frame in front of it has been stripped. */
     if (moving) {
         const atArena = viewerList(arenaFrame, moving);
-        for (const v of view) if (v.model === SPHYNX_HEAD) v.m = atArena[v.i].m;
+        for (const v of view) if (v.model === SPHYNX_HEAD) Object.assign(v, { m: atArena[v.i].m, ops: atArena[v.i].ops });
     }
 
-    const found = viewMatrix(draws);
+    const found = viewMatrix(draws.filter((d) => !d.tainted));
+    /* A frame that draws nothing at a view it can be divided by — a cut, or a
+     * stage whose record draws nothing — says nothing either way. */
+    if (!found || !inv(found.m)) {
+        degenerate++;
+        console.log(`\n=== screen frame ${fr.screen} · frame_counter ${fr.frameCounter} · `
+            + `stage_num ${fr.stageNum}: no view matrix to divide by, skipped ===`);
+        continue;
+    }
     const C = found.m;
-    const Ci = inv(C);
     /* Draws sharing the view matrix are the ones camera_init placed — the
-     * arena. The fighters carry their own base and drop out here. */
-    const stageDraws = draws.filter((d) => key(d.base) === key(C));
+     * arena. The fighters carry their own base and drop out here, and so does a
+     * draw whose matrix the stream does not carry (a shadow projection, an IK
+     * solve), which cannot be compared with anything. */
+    const tainted = draws.filter((d) => d.tainted).length;
+    const stageDraws = draws.filter((d) => !d.tainted && key(d.base) === key(C));
 
     /* The backdrop's two clocks, in degrees — see the header. */
-    const driftDeg = (fr.skyAngle - 2 * opsFrame) * (360 / 65536);
+    const driftDeg = (fr.skyAngle - (SKY_DRIFTS ? 2 * opsFrame : 0)) * (360 / 65536);
     /* Everything that stands to the left of a part's own matrix: the view, and
      * for the backdrop the drift between the two clocks. Kept separate from
      * predict() so the residual can divide by exactly it — folding the drift
@@ -246,8 +263,11 @@ for (const fr of cap.frames) {
         const tally = new Map();
         for (const g of stageDraws) {
             for (const v of view) {
-                if (!v.world || v.model !== g.model) continue;
-                const vi = inv(v.m);
+                if (!v.world || !v.m || v.model !== g.model) continue;
+                /* The backdrop votes with its drift on it, or on a moving stage
+                 * the sky agrees on a frame the drift has turned, and can
+                 * outvote the ground. */
+                const vi = inv(v.layer === 'sky' ? mul(rotY(driftDeg), v.m) : v.m);
                 if (!vi) continue;
                 const w = mul(g.m, vi);
                 const k = key(w);
@@ -265,7 +285,7 @@ for (const fr of cap.frames) {
         const base = v.world ? worldBase : C;
         return v.layer === 'sky' ? mul(base, rotY(driftDeg)) : base;
     };
-    const predict = (v) => mul(pre(v), v.m);
+    const predict = (v) => placeAt(pre(v), v.ops);
 
     const claimed = new Set();
     const matched = [];
@@ -281,14 +301,14 @@ for (const fr of cap.frames) {
         }
         if (!hit) { unknown.push(g); continue; }
         claimed.add(hit.i);
-        const D = mul(inv(hit.m), mul(inv(pre(hit)), g.m));
+        const D = mul(inv(predict(hit)) ?? I4(), g.m);
         if (bestErr <= EPS) { matched.push({ g, v: hit, err: bestErr, D }); continue; }
         /* The aimed head: a pure Y rotation is the fighters, anything else is a
          * fault. See the header. */
         /* The head is allowed to face somewhere else, and nothing more: a pure
          * rotation means it is standing where the routine puts it. */
         const col = (i) => Math.hypot(D[i], D[4 + i], D[8 + i]);
-        const rotationOnly = hit.model === SPHYNX_HEAD
+        const rotationOnly = hit.model === SPHYNX_HEAD && hit.m
             && [col(0), col(1), col(2)].every((v) => Math.abs(v - 1) < 1e-4)
             && [D[3], D[7], D[11]].every((v) => Math.abs(v) < 1e-3);
         (rotationOnly ? aimed : off).push({ g, v: hit, err: bestErr, D });
@@ -301,7 +321,8 @@ for (const fr of cap.frames) {
     const viaGeo = draws.filter((d) => d.via === 'geo').length;
     console.log(`  ${commands} commands, ${draws.length} draws `
         + `(${viaGeo} handed straight to the geometry processor), stack balance ${stackLeft}`);
-    console.log(`  view matrix shared by ${found.n} draws; ${stageDraws.length} of them are arena parts`);
+    console.log(`  view matrix shared by ${found.n} draws; ${stageDraws.length} of them are arena parts`
+        + `${tainted ? `; ${tainted} draws at a matrix the stream does not carry, not compared` : ''}`);
     console.log(`  agree exactly: ${matched.length}   disagree: ${off.length}   `
         + `viewer parts the board culled: ${culled.length}`);
     for (const x of aimed) {
@@ -311,7 +332,7 @@ for (const fr of cap.frames) {
     }
     console.log(`  ${unknown.length} further draws are not stage parts (the fighters and their shadows)`);
     console.log(`  worst residual among the parts that agree: ${worst.toExponential(2)}`);
-    console.log(`  backdrop drift: the two clocks are `
+    if (SKY_DRIFTS) console.log(`  backdrop drift: the two clocks are `
         + `${(2 * opsFrame - fr.skyAngle)} angle units `
         + `(${(-driftDeg).toFixed(4)}°) apart, and that is taken off the backdrop`);
     if (opsFrame !== fr.frameCounter) {
@@ -341,6 +362,7 @@ for (const fr of cap.frames) {
 }
 
 console.log('\n--- summary ---');
+if (degenerate) console.log(`${degenerate} frames with no view matrix to divide by, skipped`);
 for (const s of summary) {
     console.log(`frame ${s.frame}: ${s.matched}/${s.stageDraws} arena draws at the viewer's matrix `
         + `(worst residual ${s.worst.toExponential(2)}), ${s.off} disagree, ${s.culled} culled`);

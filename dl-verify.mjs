@@ -39,6 +39,7 @@
  */
 
 import fs from 'fs';
+import { CopReplay } from './cop-replay.mjs';
 import { loadRomSet, readModelEntry } from './vendor/noclip/js/romset.js';
 import { readStageTable } from './vendor/noclip/js/stages.js';
 import {
@@ -146,7 +147,8 @@ export const maxdiff = (a, b) => a.reduce((m, v, i) => Math.max(m, Math.abs(v - 
 /* ---- replaying the display list ------------------------------------------ */
 
 /**
- * Walk one frame of commands, returning every draw as {model, m, base, at, depth}.
+ * Replay one frame across both ports, in write order, returning every draw as
+ * {model, m, base, at, depth, via, tainted, base3x3}.
  *
  * `m` is the full accumulated matrix, camera included. `base` is the matrix at
  * the bottom of the stack — what the draw would have been placed at with none
@@ -154,49 +156,23 @@ export const maxdiff = (a, b) => a.reduce((m, v, i) => Math.max(m, Math.abs(v - 
  * pushes the view once and each draw brackets its own ops in push/pop. That
  * shared base is the view matrix, recovered from the display list alone with no
  * reference to what the viewer thinks any part's transform should be.
- */
-export function replay(cmds, modelByEntry) {
-    const draws = [];
-    let m = I4();
-    const stack = [];
-    for (const c of cmds) {
-        switch (c.op) {
-            case CMD.PUSH: stack.push(m.slice()); break;
-            case CMD.POP: if (stack.length) m = stack.pop(); break;
-            case CMD.TRANSLATE:
-                m = mul(m, transM(f32(c.args[0]), f32(c.args[1]), f32(c.args[2])));
-                break;
-            case CMD.SCALE:
-                m = mul(m, scaleM(f32(c.args[0]), f32(c.args[1]), f32(c.args[2])));
-                break;
-            case CMD.ANG_X: m = mul(m, rotX(ang(c.args[0]))); break;
-            case CMD.ANG_Y: m = mul(m, rotY(ang(c.args[0]))); break;
-            case CMD.ANG_Z: m = mul(m, rotZ(ang(c.args[0]))); break;
-            case CMD.DRAW: {
-                const key = `${c.args[2]}/${c.args[3]}/${c.args[4]}`;
-                draws.push({
-                    model: modelByEntry.get(key) ?? -1,
-                    key, m, base: stack.length ? stack[0] : m,
-                    at: c.at, depth: stack.length,
-                });
-                break;
-            }
-            default: break;
-        }
-    }
-    return { draws, stackLeft: stack.length };
-}
-
-/**
- * Replay one frame across both ports, in write order.
  *
- * Coprocessor commands drive the matrix stack as in replay(). A word on the
- * geometry processor's port that is some model's mesh pointer is that model
- * being handed over directly, and is recorded as a draw at whatever matrix the
- * coprocessor has built by that point in the stream — which is why the two have
- * to be walked together rather than one after the other.
+ * The matrix is `cop-replay.mjs`'s: every command that writes it, not only the
+ * push, pop, translate, scale and three angles this once applied. With only
+ * those, a part drawn from a matrix the stream loads or reads back out of a
+ * bank — canyon_env_disp's, draw_sphynx_head's, giant_wing_disp's — came out at
+ * whatever the last explicit transforms happened to leave, and a part after
+ * Fn_base_3x3 still turned with the world. `tainted` marks a draw whose matrix
+ * the stream does not carry (see there); `base3x3` one drawn after that reset.
+ * Pass one `replay` for a whole capture so a bank stored in one frame is there
+ * to be read in the next.
+ *
+ * A word on the geometry processor's port that is some model's mesh pointer is
+ * that model being handed over directly, and is recorded as a draw at whatever
+ * matrix the coprocessor has built by that point in the stream — which is why
+ * the two have to be walked together rather than one after the other.
  */
-export function replayFrame(records, modelByEntry, modelByMesh) {
+export function replayFrame(records, modelByEntry, modelByMesh, replay = new CopReplay()) {
     const cw = [], cg = [], gw = [], gg = [], handed = [];
     for (let i = 0; i < records.length; i++) {
         const [o, w] = records[i];
@@ -206,51 +182,40 @@ export function replayFrame(records, modelByEntry, modelByMesh) {
     for (let k = 2; k < gw.length; k++) {
         const hit = modelByMesh.get(gw[k]);
         /* oba, with the same model's tpa two words back: an object_data, not a
-         * word that merely looks like a mesh pointer. */
-        if (hit && gw[k - 2] === hit.uvPtr) handed.push({ at: gg[k], model: hit.model });
+         * word that merely looks like a mesh pointer. Or the model's header
+         * pointer one word back with a tpa in geometrizer RAM (bit 23): texture
+         * points uploaded by command 4, which is how the aurora hands over its
+         * scrolled ones. */
+        if (hit && (gw[k - 2] === hit.uvPtr || (gw[k - 1] === hit.matPtr && (gw[k - 2] & 0x800000)))) {
+            handed.push({ at: gg[k], model: hit.model });
+        }
     }
     const cmds = segment(cw);
     const draws = [];
-    let m = I4();
-    const stack = [];
+    const at = (extra) => ({
+        m: replay.matrix(), base: replay.base(), depth: replay.stack.length,
+        tainted: replay.tainted, base3x3: replay.base3x3, ...extra,
+    });
+    const depth0 = replay.stack.length;
     let h = 0;
     /* Everything handed over before this point in the stream is drawn at the
      * matrix standing now, so this runs before the command is applied. */
     const upto = (g) => {
         while (h < handed.length && handed[h].at < g) {
             const x = handed[h++];
-            draws.push({
-                model: x.model, key: null, m, base: stack.length ? stack[0] : m,
-                at: x.at, depth: stack.length, via: 'geo',
-            });
+            draws.push(at({ model: x.model, key: null, at: x.at, via: 'geo' }));
         }
     };
     for (const c of cmds) {
         upto(cg[c.at]);
-        switch (c.op) {
-            case CMD.PUSH: stack.push(m.slice()); break;
-            case CMD.POP: if (stack.length) m = stack.pop(); break;
-            case CMD.TRANSLATE:
-                m = mul(m, transM(f32(c.args[0]), f32(c.args[1]), f32(c.args[2]))); break;
-            case CMD.SCALE:
-                m = mul(m, scaleM(f32(c.args[0]), f32(c.args[1]), f32(c.args[2]))); break;
-            case CMD.ANG_X: m = mul(m, rotX(ang(c.args[0]))); break;
-            case CMD.ANG_Y: m = mul(m, rotY(ang(c.args[0]))); break;
-            case CMD.ANG_Z: m = mul(m, rotZ(ang(c.args[0]))); break;
-            case CMD.DRAW: {
-                const key = `${c.args[2]}/${c.args[3]}/${c.args[4]}`;
-                draws.push({
-                    model: modelByEntry.get(key) ?? -1, key, m,
-                    base: stack.length ? stack[0] : m,
-                    at: cg[c.at], depth: stack.length, via: 'copro',
-                });
-                break;
-            }
-            default: break;
+        if (c.op === CMD.DRAW) {
+            const key = `${c.args[2]}/${c.args[3]}/${c.args[4]}`;
+            draws.push(at({ model: modelByEntry.get(key) ?? -1, key, at: cg[c.at], via: 'copro' }));
         }
+        replay.apply(c.op, c.args);
     }
     upto(Infinity);
-    return { draws, stackLeft: stack.length, commands: cmds.length };
+    return { draws, stackLeft: replay.stack.length - depth0, commands: cmds.length };
 }
 
 /* ---- the viewer's side ---------------------------------------------------- */
@@ -266,9 +231,25 @@ export function boardMatrix(ops) {
          * see the ANGLE_DEG note in display.js — so it goes back negated, the
          * way a translation's Z does. */
         else if (kind === 'rz') m = mul(m, rotZ(-v));
-        else m = mul(m, transM(v[0], v[1], -v[2]));
+        else if (kind === 't') m = mul(m, transM(v[0], v[1], -v[2]));
+        else throw new Error(`boardMatrix: op '${kind}' is not a matrix — split on BILLBOARD with placeAt`);
     }
     return m;
+}
+
+/**
+ * Where the board draws an op list under a view C: C times its matrix, except
+ * that display.js's BILLBOARD (['b']) is the coprocessor's Fn_base_3x3, which
+ * sets the 3x3 of everything accumulated so far — view included — to the
+ * identity and keeps the position it has reached. What follows it applies to
+ * that. So a list is cut at its first BILLBOARD, the part before it placed and
+ * squared up, and the part after it multiplied on.
+ */
+export function placeAt(C, ops) {
+    const b = ops.findIndex((op) => op[0] === 'b');
+    if (b < 0) return mul(C, boardMatrix(ops));
+    const p = mul(C, boardMatrix(ops.slice(0, b)));
+    return mul(transM(p[3], p[7], p[11]), boardMatrix(ops.slice(b + 1).filter((op) => op[0] !== 'b')));
 }
 
 /* ---- loading -------------------------------------------------------------- */
@@ -310,7 +291,7 @@ export async function loadRom(zip) {
 }
 
 /**
- * Mesh pointer -> {model, uvPtr}, for objects handed to the geometry processor.
+ * Mesh pointer -> {model, uvPtr, matPtr}, for objects handed to the geometry processor.
  * The uv pointer comes along so a match can be corroborated: the geometry
  * processor's object_data is (tpa, tha, oba, obc), so a real object has the
  * model's uv pointer two words ahead of its mesh pointer. Matching the mesh
@@ -321,7 +302,7 @@ export function meshIndex(rom) {
     for (let i = 0; i < rom.game.modelTable.count; i++) {
         const e = readModelEntry(rom, i);
         if (e.meshPtr && !byMesh.has(e.meshPtr)) {
-            byMesh.set(e.meshPtr, { model: i, uvPtr: e.uvPtr });
+            byMesh.set(e.meshPtr, { model: i, uvPtr: e.uvPtr, matPtr: e.matPtr });
         }
     }
     return byMesh;
