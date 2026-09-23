@@ -125,13 +125,21 @@ end
 -- and this does not track where commands start: that would take the argument
 -- count of all 136 opcodes, and one unknown command would lose it for good. So
 -- 0x40008080 is only a candidate — as a float it is 2.00785, which can turn up
--- inside a matrix or a position. A candidate is believed only once its header
--- and first part record have the shape zanzou_control gives them, and only then
--- is it queued for the SHARC. That is still in time: the firmware cannot store
--- a part's models before the i960 has sent that part's record.
+-- inside a matrix or a position. A candidate is believed once its whole header
+-- has the shape zanzou_control gives it and its first part index is one the
+-- mask names, and is queued for the SHARC then. That is before the firmware
+-- can store anything for the part: it cannot store a part's models without
+-- having read the part's index. A later word can still give it away, and it is
+-- taken back out of the queue.
+--
+-- The FIFO has a second way in, the function port at 0x880000, which pushes a
+-- word re-encoded from its address; the parser does not see it. zanzou_control
+-- writes the FIFO directly, and the capture counts function-port writes so a
+-- capture where the game used it says so.
 local R = nil          -- the candidate being followed, or nil
 local pending = {}     -- believed reserves, waiting for the SHARC to reach them
 M.falseStarts = 0
+M.funcPort = 0
 
 local function u16ish(w) return w < 0x10000 or w >= 0xFFFF0000 end
 
@@ -183,16 +191,14 @@ local function reserve_word(w)
             R.phase = "tail"
         elseif w < 16 and (R.header[2] >> w) & 1 == 1 then
             R.cur = { w }; R.parts[#R.parts + 1] = R.cur; R.phase = "body"
+            if not R.queued then R.queued = true; pending[#pending + 1] = R end
         else
             return reject(w)
         end
     elseif R.phase == "body" then
         if w > 0xFFFF then return reject(w) end
         R.cur[#R.cur + 1] = w
-        if #R.cur == 4 then
-            R.phase = "index"
-            if not R.queued then R.queued = true; pending[#pending + 1] = R end
-        end
+        if #R.cur == 4 then R.phase = "index" end
     elseif R.phase == "tail" then
         if not u16ish(w) then return reject(w) end
         R.angle = w
@@ -249,6 +255,16 @@ function M.selftest()
     run("broken after queue", { RES, 0, 0x120, 0xFFFFFFFE, HALF, 8, 2220, 2221, 2222, 0x1234 }, 0, 1, 0)
     -- A terminator before any part.
     run("empty", { RES, 0, 0x20, 0xFFFFFFFA, HALF, END, 0 }, 0, 1, 0)
+    -- A queued false start, ended by the real command where a part index goes.
+    run("queued stray then real", with({ RES, 0, 0x20, 0xFFFFFFFA, HALF, 5, 1, 2, 3 }), 1, 1, 1)
+    -- A queued false start, ended by the real command where the turn goes.
+    run("stray tail eats real", with({ RES, 0, 0x20, 0xFFFFFFFA, HALF, 5, 1, 2, 3, END }), 1, 1, 1)
+    -- Two whole reserves back to back, one per fighter: the parser starts clean.
+    local both = {}
+    for _, w in ipairs(real) do both[#both + 1] = w end
+    for _, w in ipairs({ RES, 1, 0x9000, 0xFFFFFFFA, HALF, 12, 3845, 3846, 3847,
+                         15, 3845, 3846, 3847, END, 0 }) do both[#both + 1] = w end
+    run("two fighters", both, 2, 0, 2)
     M.reserves, M.falseStarts, pending, R = saved[1], saved[2], {}, nil
     return #out == 0 and "ok" or table.concat(out, "; ")
 end
@@ -373,6 +389,10 @@ end
 function M.attach()
     if M.sub then return "already" end
     M.pin_tap()
+    M.ftap = space():install_write_tap(0x00880000, 0x00883fff, "zfunc_w",
+        function(offset, data, mask)
+            if M.state == "capturing" then M.funcPort = M.funcPort + 1 end
+        end)
     M.wtap = space():install_write_tap(FIFO_LO, FIFO_HI, "zfifo_w",
         function(offset, data, mask)
             M.seen = M.seen + 1
@@ -407,6 +427,7 @@ function M.start()
     R = nil
     pending = {}
     M.falseStarts = 0
+    M.funcPort = 0
     M.state = "capturing"
     return "ok"
 end
@@ -467,6 +488,7 @@ function M.write(path)
         ',"player_fields":["motion","coma","char","skeleton_type","flags","parts_flag",',
         '"propeller","trail_mask","trail_step","trail_turn","word_7ec","models"]',
         ',"false_starts":', tostring(M.falseStarts),
+        ',"function_port_writes":', tostring(M.funcPort),
         ',"frames":', jlist(M.frames), ',"reserves":[')
     for i, r in ipairs(M.reserves) do
         if i > 1 then z:write(",") end
@@ -474,8 +496,8 @@ function M.write(path)
     end
     z:write("]}")
     z:close()
-    return string.format("ok %d words, %d frames, %d reserves, %d false starts",
-        M.n, #M.frames, #M.reserves, M.falseStarts)
+    return string.format("ok %d words, %d frames, %d reserves, %d false starts, %d function-port writes",
+        M.n, #M.frames, #M.reserves, M.falseStarts, M.funcPort)
 end
 
 return "zcap loaded"

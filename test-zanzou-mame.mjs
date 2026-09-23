@@ -181,6 +181,12 @@ for (const r of cap.reserves) {
 }
 console.log(`reserve: ${rtally.n} sent · ${rtally.ok} match the explorer's · ${rtally.bad} differ`
     + (cap.false_starts ? ` · ${cap.false_starts} data words that looked like a reserve set aside` : ''));
+/* The parser sees only the FIFO's direct port. A command pushed through the
+ * function port would be invisible to it, so a capture where the game used that
+ * port cannot vouch for having seen every reserve. */
+if (cap.function_port_writes) {
+    fail(`${cap.function_port_writes} words went through the function port, which the parser does not see`);
+}
 
 /* ---- 3. the ring, command by command -------------------------------------- */
 
