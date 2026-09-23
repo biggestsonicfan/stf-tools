@@ -142,6 +142,10 @@ local function header_word_ok(k, w)
     if k == 1 then return w == 0 or w == 1 end
     if k == 2 then return w ~= 0 and w <= 0xFFFF end
     if k == 3 then return u16ish(w) end
+    -- The command word itself passes as a float (2.00785) where every other
+    -- check here refuses it, and no fighter's bone is that; refused, it starts
+    -- the reserve it is over again.
+    if w == 0x40008080 then return false end
     local bone = string.unpack("<f", string.pack("<I4", w))
     return bone == bone and bone > 0 and bone < 16
 end
@@ -234,6 +238,9 @@ function M.selftest()
     run("stray then real", with({ RES, 0x41200000 }), 1, 1, 1)
     -- The stray one's first "header" word is the real command.
     run("stray eats real", with({ RES }), 1, 1, 1)
+    -- The stray one's bone length is the real command, which as a float
+    -- (2.00785) would pass for one.
+    run("stray bone eats real", with({ RES, 0, 0x20, 0 }), 1, 1, 1)
     -- A plausible header with an impossible bone length.
     run("bad bone", { RES, 1, 0x20, 0xFFFFFFFA, 0x7F800000, 5 }, 0, 1, 0)
     -- A part the mask does not name.
