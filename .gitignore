@@ -5,3 +5,6 @@ node_modules/
 
 # Whatever a machine needs locally and no one else should have.
 .env
+
+# m2-hle session logs: noisy, and they carry the local netplay login.
+*.log
