@@ -42,13 +42,13 @@ const load = (m) => import(pathToFileURL(path.join(EXPLORER, 'js', m)).href);
 const { loadRomSet } = await load('romset.js');
 const { useCoproTrig } = await load('pose.js');
 const { readMotionScript, scriptStateAt } = await load('motion.js');
-let Z;
-try {
-    Z = await load('zanzou.js');
-} catch {
+/* Skip only when the port is not there at all. An explorer that has it and
+ * fails to load it is a failure, not a skip. */
+if (!fs.existsSync(path.join(EXPLORER, 'js', 'zanzou.js'))) {
     console.log(`SKIP: ${EXPLORER} has no js/zanzou.js — point STF_EXPLORER at an explorer with the trail port`);
     process.exit(0);
 }
+const Z = await load('zanzou.js');
 const { readExhaust } = await load('exhaust.js');
 
 const args = process.argv.slice(2);
@@ -146,7 +146,6 @@ const mirror = (m) => ((m & 0xe1c0) >>> 3) | ((m & 0x1c38) << 3) | (m & 0x207);
 
 const rtally = { n: 0, ok: 0, bad: 0, oracle: 0 };
 for (const r of cap.reserves) {
-    if (r.bad) { fail(`reserve at frame ${r.frame}: stream broke (${r.bad})`); continue; }
     rtally.n++;
     const [player, mask, step, boneW] = r.header;
     /* The sender's motion, frame and flags as the reserve went out. */
@@ -180,7 +179,8 @@ for (const r of cap.reserves) {
     if (Math.abs(ma - cmd.spacing) > 1e-6) errs.push(`zanzou_ma ${ma} vs ${cmd.spacing}`);
     if (errs.length) { rtally.bad++; fail(`${where}: ${errs.join('; ')}`); } else rtally.ok++;
 }
-console.log(`reserve: ${rtally.n} sent · ${rtally.ok} match the explorer's · ${rtally.bad} differ`);
+console.log(`reserve: ${rtally.n} sent · ${rtally.ok} match the explorer's · ${rtally.bad} differ`
+    + (cap.false_starts ? ` · ${cap.false_starts} data words that looked like a reserve set aside` : ''));
 
 /* ---- 3. the ring, command by command -------------------------------------- */
 
@@ -251,7 +251,7 @@ function compareRing(sim, sn, where) {
  * snapshot only when it is the same fighter's, a frame on, with the same mask.
  */
 const otally = { n: 0, exact: 0, slotsWrong: 0, matWorst: 0, writeOff: 0, timerOff: 0 };
-const chain = cap.reserves.filter((r) => !r.bad && r.pre);
+const chain = cap.reserves.filter((r) => r.pre);
 for (let i = 0; i + 1 < chain.length; i++) {
     const r = chain[i], next = chain[i + 1];
     const pre = decode(r.pre), after = decode(next.pre);

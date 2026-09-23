@@ -92,6 +92,11 @@ async def main():
             "-snapshot_directory", OUTDIR,
         ])
         print(await d.ev(f'dofile("{LUA}")'), flush=True)
+        # The reserve parser against crafted streams, before anything rides on it.
+        check = await d.cap("selftest()")
+        print("parser self-test:", check, flush=True)
+        if check != "ok":
+            raise RuntimeError("the reserve parser failed its self-test")
         await d.set("want", FRAMES)
         await d.set("char", CHAR)
         await d.set("raw", "true" if RAW else "false")

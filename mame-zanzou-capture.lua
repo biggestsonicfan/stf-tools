@@ -121,28 +121,76 @@ end
 
 -- ---- the reserve stream ----------------------------------------------------
 
-local R = nil          -- the reserve being followed, or nil
-local pending = {}     -- reserves sent, waiting for the SHARC to reach them
+-- The i960 sends the reserve through the same FIFO as every other command,
+-- and this does not track where commands start: that would take the argument
+-- count of all 136 opcodes, and one unknown command would lose it for good. So
+-- 0x40008080 is only a candidate — as a float it is 2.00785, which can turn up
+-- inside a matrix or a position. A candidate is believed only once its header
+-- and first part record have the shape zanzou_control gives them, and only then
+-- is it queued for the SHARC. That is still in time: the firmware cannot store
+-- a part's models before the i960 has sent that part's record.
+local R = nil          -- the candidate being followed, or nil
+local pending = {}     -- believed reserves, waiting for the SHARC to reach them
+M.falseStarts = 0
+
+local function u16ish(w) return w < 0x10000 or w >= 0xFFFF0000 end
+
+-- Is header word k plausible? player, mask, step, bone length. Checked as each
+-- word arrives, so a false start ends on the first word that gives it away —
+-- which, if that word is the real command, is where the real reserve begins.
+local function header_word_ok(k, w)
+    if k == 1 then return w == 0 or w == 1 end
+    if k == 2 then return w ~= 0 and w <= 0xFFFF end
+    if k == 3 then return u16ish(w) end
+    local bone = string.unpack("<f", string.pack("<I4", w))
+    return bone == bone and bone > 0 and bone < 16
+end
+
+local function drop(r)
+    for i, q in ipairs(pending) do
+        if q == r then table.remove(pending, i); break end
+    end
+end
+
+local function start(w)
+    R = { phase = "header", header = {}, parts = {}, frame = frameno(),
+          fc = space():read_u32(FRAME_COUNTER) }
+end
+
+local function reject(w)
+    M.falseStarts = M.falseStarts + 1
+    if R.queued then drop(R) end
+    R = nil
+    if w == 0x40008080 then start(w) end
+end
+
 local function reserve_word(w)
     if not R then
-        if w == 0x40008080 then
-            R = { phase = "header", k = 0, header = {}, parts = {}, frame = frameno(),
-                  fc = space():read_u32(FRAME_COUNTER) }
-            pending[#pending + 1] = R
-        end
+        if w == 0x40008080 then start(w) end
         return
     end
     if R.phase == "header" then
+        if not header_word_ok(#R.header + 1, w) then return reject(w) end
         R.header[#R.header + 1] = w
         if #R.header == 4 then R.phase = "index" end
     elseif R.phase == "index" then
-        if w == 0xFFFFFFFF then R.phase = "tail"
-        elseif w < 16 then R.cur = { w }; R.parts[#R.parts + 1] = R.cur; R.phase = "body"
-        else R.bad = string.format("part index %08x", w); R.phase = "done" end
+        if w == 0xFFFFFFFF then
+            if #R.parts == 0 then return reject(w) end
+            R.phase = "tail"
+        elseif w < 16 and (R.header[2] >> w) & 1 == 1 then
+            R.cur = { w }; R.parts[#R.parts + 1] = R.cur; R.phase = "body"
+        else
+            return reject(w)
+        end
     elseif R.phase == "body" then
+        if w > 0xFFFF then return reject(w) end
         R.cur[#R.cur + 1] = w
-        if #R.cur == 4 then R.phase = "index" end
+        if #R.cur == 4 then
+            R.phase = "index"
+            if not R.queued then R.queued = true; pending[#pending + 1] = R end
+        end
     elseif R.phase == "tail" then
+        if not u16ish(w) then return reject(w) end
         R.angle = w
         R.phase = "done"
         local s = space()
@@ -150,11 +198,52 @@ local function reserve_word(w)
         R.state = { s:read_u16(b + 0x1A8), s:read_u16(b + 0x1AA), s:read_u8(b + 0x1B0),
                     s:read_u32(b), (R.header[1] == 1) and 0 or M.cur, s:read_u32(ZANZOU_MA),
                     s:read_u8(b + 0x84C) }
-    end
-    if R.phase == "done" then
         M.reserves[#M.reserves + 1] = R
         R = nil
     end
+end
+
+-- The parser against crafted streams, run by mame-zanzou.py before every
+-- capture: a real reserve, a data word that looks like one, and the ways a
+-- false start can end. Returns "ok" or what went wrong.
+function M.selftest()
+    local saved = { M.reserves, M.falseStarts }
+    local out = {}
+    local function run(name, words, wantReserves, wantFalse, wantPending)
+        M.reserves, M.falseStarts, pending, R = {}, 0, {}, nil
+        for _, w in ipairs(words) do reserve_word(w) end
+        local got = string.format("%d/%d/%d", #M.reserves, M.falseStarts, #pending)
+        local want = string.format("%d/%d/%d", wantReserves, wantFalse, wantPending)
+        if got ~= want then
+            out[#out + 1] = string.format("%s: reserves/false/pending %s, wanted %s", name, got, want)
+        end
+    end
+    local RES, END, HALF = 0x40008080, 0xFFFFFFFF, 0x3F000000
+    local real = { RES, 0, 0x120, 0xFFFFFFFE, HALF, 8, 2220, 2221, 2222, 5, 2220, 2221, 2222, END, 0 }
+    local function with(prefix)
+        local t = {}
+        for _, w in ipairs(prefix) do t[#t + 1] = w end
+        for _, w in ipairs(real) do t[#t + 1] = w end
+        return t
+    end
+    -- The whole of a real reserve, left queued for the SHARC.
+    run("real", real, 1, 0, 1)
+    -- 2.00785 inside some matrix, then ordinary words: set aside at once.
+    run("stray float", { RES, 0x3F800000, 0, 0 }, 0, 1, 0)
+    -- A stray one straight before a real one: the real one is still found.
+    run("stray then real", with({ RES, 0x41200000 }), 1, 1, 1)
+    -- The stray one's first "header" word is the real command.
+    run("stray eats real", with({ RES }), 1, 1, 1)
+    -- A plausible header with an impossible bone length.
+    run("bad bone", { RES, 1, 0x20, 0xFFFFFFFA, 0x7F800000, 5 }, 0, 1, 0)
+    -- A part the mask does not name.
+    run("part off mask", { RES, 0, 0x20, 0xFFFFFFFA, HALF, 8, 2220 }, 0, 1, 0)
+    -- Queued after its first part, then broken: taken back out of the queue.
+    run("broken after queue", { RES, 0, 0x120, 0xFFFFFFFE, HALF, 8, 2220, 2221, 2222, 0x1234 }, 0, 1, 0)
+    -- A terminator before any part.
+    run("empty", { RES, 0, 0x20, 0xFFFFFFFA, HALF, END, 0 }, 0, 1, 0)
+    M.reserves, M.falseStarts, pending, R = saved[1], saved[2], {}, nil
+    return #out == 0 and "ok" or table.concat(out, "; ")
 end
 
 -- The SHARC's first store into a part-model table for the oldest reserve it
@@ -295,7 +384,6 @@ function M.attach()
     local function attr(offset, data, mask)
         if M.state ~= "capturing" or #pending == 0 then return end
         local r = pending[1]
-        if r.header[1] == nil then return end
         local base = (r.header[1] == 1) and 0x32200 or 0x321A0
         if offset < base or offset > base + 0x2F then return end
         on_attr_store()
@@ -311,6 +399,7 @@ function M.start()
     M.n, M.words, M.offs, M.marks, M.frames, M.reserves = 0, {}, {}, {}, {}, {}
     R = nil
     pending = {}
+    M.falseStarts = 0
     M.state = "capturing"
     return "ok"
 end
@@ -338,10 +427,9 @@ local function jreserve(r)
         return string.format('{"units":"%s","low":"%s","ring":"%s"}', sn.units, sn.low, sn.ring)
     end
     return string.format(
-        '{"frame":%d,"fc":%d,"state":%s,"header":%s,"parts":[%s],"angle":%s,"bad":%s,"pre":%s}',
+        '{"frame":%d,"fc":%d,"state":%s,"header":%s,"parts":[%s],"angle":%s,"pre":%s}',
         r.frame, r.fc, jlist(r.state or {}), jlist(r.header), table.concat(parts, ","),
-        r.angle and tostring(r.angle) or "null",
-        r.bad and ('"' .. r.bad .. '"') or "null", snap(r.pre))
+        r.angle and tostring(r.angle) or "null", snap(r.pre))
 end
 
 function M.write(path)
@@ -371,6 +459,7 @@ function M.write(path)
     z:write('{"char":', tostring(M.char or -1), ',"cases":[', table.concat(cases, ","), ']',
         ',"player_fields":["motion","coma","char","skeleton_type","flags","parts_flag",',
         '"propeller","trail_mask","trail_step","trail_turn","word_7ec","models"]',
+        ',"false_starts":', tostring(M.falseStarts),
         ',"frames":', jlist(M.frames), ',"reserves":[')
     for i, r in ipairs(M.reserves) do
         if i > 1 then z:write(",") end
@@ -378,7 +467,8 @@ function M.write(path)
     end
     z:write("]}")
     z:close()
-    return string.format("ok %d words, %d frames, %d reserves", M.n, #M.frames, #M.reserves)
+    return string.format("ok %d words, %d frames, %d reserves, %d false starts",
+        M.n, #M.frames, #M.reserves, M.falseStarts)
 end
 
 return "zcap loaded"
