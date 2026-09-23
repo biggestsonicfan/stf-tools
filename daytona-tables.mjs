@@ -29,6 +29,11 @@
  *              the array findable at all.
  *   models     the model table, from the program ROM's own pointers into it:
  *              every one lands on a multiple of the stride from the base.
+ *   courses    256 consecutive model pointers per course, and the array that
+ *              names the runs.
+ *   objects    the trackside objects: the table of course tables by its shape,
+ *              each routine named by the record that starts in it, and each
+ *              table a routine reads by the instruction that reads it.
  *
  * Then it prints the block, so what goes into js/games.js is transcribed from a
  * run rather than typed.
@@ -398,6 +403,221 @@ const regionLen = (src) => (src === 'maincpu' ? code.length : rom.mainData.lengt
     }
 }
 
+/* ---- the trackside objects ------------------------------------------------ */
+
+/*
+ * What stands along a course besides its blocks: a table per course, a pointer
+ * per grid block, and behind each a count and that many 24-byte records —
+ * {x, y, z, angle, id, init, arg} — each of which becomes a task that draws
+ * one object. See js/daytona.js for the layout and for what each routine draws.
+ *
+ * The names. Sega Racing Classic's d1a.exe carries the board's own names for
+ * the object routines (`ship`, `slot`, `jeffly`, `tori`, `uma` ...), and its
+ * program is a later build of the same one. The builds do not keep their
+ * tables at one address, so a name cannot be carried across by address. It is
+ * carried by record instead: all eight builds place the same 130 records in
+ * the same order, so the routine the Nth record starts in is the same routine
+ * in every build. OBJECT_RUNS is that order, read once off the Ringwide build
+ * with its names, and a build is only named from it if every record of a name
+ * starts in one routine and no two names share one.
+ *
+ * Then the tables. None is found by looking at data: each is the operand of
+ * the instruction in its routine that reads it, which is the one thing the
+ * routine cannot be wrong about.
+ */
+const OBJECT_RUNS = [
+    [['sub_213b0', 1], ['sub_217cc', 10], ['sub_216e4', 1], ['maku_int', 1], ['rank_int', 1],
+        ['sub_20118', 1], ['rou2_int', 1], ['sub_201bc', 14], ['z_kaitenn_int', 1], ['sub_20118', 1],
+        ['sub_21f0c', 1], ['sub_201bc', 1], ['slot_int', 1]],
+    [['sub_213b0', 1], ['sub_217cc', 9], ['sub_21730', 3], ['sub_21764', 8], ['sub_21798', 12],
+        ['sub_21764', 3], ['sub_216e4', 1], ['check_point_int', 1], ['uma_int', 5], ['uma_end_int', 1],
+        ['arcade_window_int', 1], ['wall_int', 1], ['tori_int', 2], ['check_point_int', 1], ['tori_int', 2],
+        ['bb_int', 1], ['ctykya_int', 1], ['check_point_int', 4], ['tori_syumi_int', 6]],
+    [['sub_213b0', 1], ['sub_21730', 3], ['sub_21764', 4], ['sub_21798', 8], ['sub_216e4', 1],
+        ['wing_int', 1], ['water_int', 1], ['check_point_int', 1], ['hata_3_int', 1], ['ship_int', 1],
+        ['light2_int', 1], ['sub_201bc', 6], ['check_point_int', 1], ['light_int', 1], ['check_point_int', 1]],
+];
+/* What js/daytona.js draws for each. `none` is a routine that draws nothing in
+ * the state a course opens in; `runs` calls the routine its argument names. */
+const OBJECT_KIND = {
+    sub_213b0: 'none', sub_216e4: 'runs', sub_217cc: 'pylon', sub_21730: 'pylon', sub_21764: 'pylon',
+    sub_21798: 'pylon', maku_int: 'world', rank_int: 'rank', sub_20118: 'static', rou2_int: 'spinY',
+    sub_201bc: 'cycle', z_kaitenn_int: 'spinZ', sub_21f0c: 'window', slot_int: 'slot',
+    check_point_int: 'checkpoint', uma_int: 'horse', uma_end_int: 'none', arcade_window_int: 'window',
+    wall_int: 'world', tori_int: 'birds', bb_int: 'bigBird', ctykya_int: 'crowd', tori_syumi_int: 'none',
+    wing_int: 'windmill', water_int: 'light', hata_3_int: 'flags', ship_int: 'ship', light2_int: 'light',
+    light_int: 'light', jeffly_int: 'jeffry',
+};
+{
+    const ALIAS = 0x200000;
+    const P = (v) => (v >= ALIAS && v < ALIAS + code.length ? v - ALIAS : -1);
+    const CODE = (v) => P(v) >= 0x20000;
+    /* One course's records: 256 pointers to count-prefixed runs of records
+     * whose init field is code — null if that is not what is there. */
+    const records = (tab) => {
+        if (tab < 0 || tab + 1024 > code.length) return null;
+        const recs = [];
+        for (let b = 0; b < 256; b++) {
+            const g = cv.getUint32(tab + b * 4, true);
+            if (!g) continue;
+            const ga = P(g);
+            if (ga < 0) return null;
+            const n = cv.getUint32(ga, true);
+            if (n < 1 || n > 64) return null;
+            for (let i = 0; i < n; i++) {
+                const r = ga + 4 + i * 24;
+                const init = cv.getUint32(r + 16, true);
+                if (!CODE(init)) return null;
+                recs.push({ init: P(init), arg: cv.getUint32(r + 20, true) });
+            }
+        }
+        return recs;
+    };
+    /* The table of course tables, by that shape alone. */
+    let at = null, courses = null;
+    for (let a = 0; a + 16 <= code.length && at === null; a += 4) {
+        const t = [0, 1, 2].map((k) => P(cv.getUint32(a + k * 4, true)));
+        if (t.some((x) => x < 0)) continue;
+        const r = t.map(records);
+        if (r.every((x) => x && x.length)) { at = a; courses = r; }
+    }
+    const want = OBJECT_RUNS.map((runs) => runs.reduce((n, [, k]) => n + k, 0));
+    if (at === null) notes.push('objects: no four-course table of object records');
+    else if (courses.some((c, i) => c.length !== want[i])) {
+        notes.push(`objects: table at 0x${at.toString(16)} holds ${courses.map((c) => c.length).join('/')} `
+            + `records where the named order has ${want.join('/')}`);
+    } else {
+        /* Name each routine by the records that start in it. */
+        const byName = new Map(), byInit = new Map();
+        let clash = null;
+        courses.forEach((recs, c) => {
+            let i = 0;
+            for (const [name, n] of OBJECT_RUNS[c]) {
+                for (let k = 0; k < n; k++, i++) {
+                    const init = recs[i].init;
+                    if ((byName.get(name) ?? init) !== init) clash ??= `${name} starts in two routines`;
+                    if ((byInit.get(init) ?? name) !== name) {
+                        clash ??= `0x${init.toString(16)} is both ${byInit.get(init)} and ${name}`;
+                    }
+                    byName.set(name, init);
+                    byInit.set(init, name);
+                }
+            }
+        });
+        /* The one argument of sub_216e4's that is code is jeffly_int. */
+        for (const recs of courses) {
+            for (const r of recs) {
+                if (byInit.get(r.init) === 'sub_216e4' && CODE(r.arg)) byName.set('jeffly_int', P(r.arg));
+            }
+        }
+        if (clash) {
+            notes.push(`objects: the records do not name one routine each (${clash}) — `
+                + 'this build does not lay its objects out as the later ones do, and has none in the profile');
+        } else {
+            /* A routine as instructions, from its entry to the ret no branch
+             * seen so far jumps past. */
+            const routine = (a0) => {
+                const list = [];
+                let furthest = a0;
+                for (let a = a0; a < a0 + 0x800;) {
+                    const d = disasm(cv, a);
+                    list.push({ a, text: d.text });
+                    if (d.target !== null && d.top >= 0x08 && d.top <= 0x3f && d.top !== 0x09) {
+                        furthest = Math.max(furthest, d.target);
+                    }
+                    a += d.len > 0 ? d.len : 4;
+                    if (d.text === 'ret' && a > furthest) break;
+                }
+                return list;
+            };
+            /* The display routine an init installs: the code address it
+             * stores as the task's next step. */
+            const display = (name) => {
+                const r = routine(byName.get(name));
+                for (let k = 0; k + 1 < r.length; k++) {
+                    const m = r[k].text.match(/^lda (0x[0-9a-f]+), (r\d+)$/);
+                    if (m && CODE(parseInt(m[1], 16))
+                        && new RegExp(`^st ${m[2]}, 0x(c|14)\\(g13\\)$`).test(r[k + 1].text)) {
+                        return P(parseInt(m[1], 16));
+                    }
+                }
+                return null;
+            };
+            /* Every operand of `re` in a routine, as numbers. */
+            const operands = (a, re) => (a === null || a === undefined ? [] : routine(a))
+                .map((x) => x.text.match(re)).filter(Boolean).map((m) => parseInt(m[1], 16));
+            const one = (what, list) => {
+                if (list.length !== 1) { notes.push(`objects: ${what}: ${list.length} candidates`); return null; }
+                return list[0];
+            };
+            const PT = '(0x2[0-9a-f]{5})';        /* the program ROM, through its alias */
+            const DT = '(0x2[89][0-9a-f]{5})';    /* the data ROM's model records */
+            const ld = (reg) => new RegExp(`^ld ${PT}\\[r\\d+\\*4\\], ${reg}$`);
+
+            const O = { at, kinds: {} };
+            for (const [name, init] of byName) O.kinds[init] = OBJECT_KIND[name];
+            /* sub_201bc: `ld <array>[sel_course*4]` — a table per course. */
+            O.cycles = one('cycles', operands(byName.get('sub_201bc'), ld('r\\d+')));
+            /* check_point_int: `lda <table>[id*6 words]`. */
+            O.checkpoints = one('checkpoints',
+                operands(byName.get('check_point_int'), new RegExp(`^lda ${PT}\\[r\\d+\\*4\\], r\\d+$`)));
+            /* rank: its five places, walked 12 bytes at a time. Both of its
+             * branches name the one table. */
+            O.rankBoard = one('rankBoard',
+                [...new Set(operands(display('rank_int'), new RegExp(`^lda ${PT}, r14$`)))]);
+            /* wing: the sails' list and the two parts that do not turn. Its
+             * attract and race branches draw the same three. */
+            O.windmill = {
+                sails: one('windmill sails', [...new Set(operands(display('wing_int'), ld('g0')))]),
+                still: [...new Set(operands(display('wing_int'), new RegExp(`^lda ${DT}, g0$`)))],
+            };
+            /* bb draws the flock's own wing table. */
+            O.birds = one('birds', operands(display('bb_int'), ld('g0')));
+            O.horses = one('horses', operands(display('uma_int'), ld('g0')));
+            O.jeffry = one('jeffry', operands(display('jeffly_int'), new RegExp(`^lda ${DT}, g0$`)));
+            /* ctykya: the crowds, as {list, count}. Revision A has one,
+             * its count a `mov` and its list an `lda` inside the routine; the
+             * Special Edition added a second and moved both into a table of
+             * {from, to, count, list} walked by `cmpinco <last>`. */
+            {
+                const r = routine(display('ctykya_int') ?? -1);
+                const texts = r.map((x) => x.text);
+                const table = texts.map((t) => t.match(new RegExp(`^lda ${PT}\\[r\\d+\\*16\\], r\\d+$`))).find(Boolean);
+                const last = texts.map((t) => t.match(/^cmpinco (\d+), r\d+, r\d+$/)).find(Boolean);
+                const count = texts.map((t) => t.match(/^mov (\d+), 0, r10$/)).find(Boolean);
+                const list = texts.map((t) => t.match(new RegExp(`^lda ${PT}\\[r\\d+\\*4\\], r11$`))).find(Boolean);
+                if (table && last) {
+                    const t = parseInt(table[1], 16);
+                    O.crowds = [];
+                    for (let s = 0; s <= +last[1]; s++) {
+                        O.crowds.push({ list: cv.getUint32(P(t) + s * 16 + 12, true), count: cv.getUint32(P(t) + s * 16 + 8, true) });
+                    }
+                } else if (count && list) {
+                    O.crowds = [{ list: parseInt(list[1], 16), count: +count[1] }];
+                } else notes.push('objects: crowds: neither form of ctykya');
+            }
+            /* The four pylon kinds differ in the descriptor each installs at
+             * +0x5C, whose second float is how high the model stands. */
+            /* Each is a few instructions and a branch into the code they share,
+             * which is laid out after all four — so the walk from one reaches
+             * the others' too, and only the first store is its own. */
+            O.pylons = {};
+            for (const name of ['sub_217cc', 'sub_21730', 'sub_21764', 'sub_21798']) {
+                const r = routine(byName.get(name));
+                for (let k = 0; k + 1 < r.length; k++) {
+                    const m = r[k].text.match(new RegExp(`^lda ${DT}, r3$`));
+                    if (m && r[k + 1].text === 'st r3, 0x5c(g13)') {
+                        O.pylons[byName.get(name)] = parseInt(m[1], 16);
+                        break;
+                    }
+                }
+            }
+            out.objects = O;
+            out.objectRecords = courses.map((c) => c.length);
+        }
+    }
+}
+
 /* ---- report -------------------------------------------------------------- */
 
 console.log(`set          ${ROMS.join(' + ')}`);
@@ -451,6 +671,21 @@ if (out.courses) {
     console.log(`courses      { source: '${out.courses.source}', at: ${hex(out.courses.at)} } — `
         + `${out.courseBlocks.tables} block tables at ${hex(out.courseBlocks.at)}, opening on models ${ids.join(', ')}`);
 }
+if (out.objects) {
+    const O = out.objects;
+    const kinds = Object.entries(O.kinds).sort(([a], [b]) => a - b)
+        .map(([a, k]) => `${hex(+a)}: '${k}'`);
+    const pylons = Object.entries(O.pylons).map(([a, d]) => `${hex(+a)}: ${hex(d)}`);
+    console.log(`objects      { at: ${hex(O.at)}, cycles: ${hex(O.cycles)}, checkpoints: ${hex(O.checkpoints)}, `
+        + `rankBoard: ${hex(O.rankBoard)},`);
+    console.log(`               windmill: { sails: ${hex(O.windmill.sails)}, still: [${O.windmill.still.map(hex).join(', ')}] },`);
+    const crowds = (O.crowds ?? []).map((c) => `{ list: ${hex(c.list)}, count: ${c.count} }`);
+    console.log(`               birds: ${hex(O.birds)}, horses: ${hex(O.horses)}, jeffry: ${hex(O.jeffry)},`);
+    console.log(`               crowds: [${crowds.join(', ')}],`);
+    console.log(`               pylons: { ${pylons.join(', ')} },`);
+    console.log(`               kinds: { ${kinds.join(', ')} } }`);
+    console.log(`             ${out.objectRecords.join('/')} records on the three courses`);
+}
 for (const n of notes) console.log(`note         ${n}`);
 
 if (VERBOSE) console.log('\n' + JSON.stringify(out, null, 2));
@@ -487,6 +722,19 @@ if (CHECK) {
         g.lighting.light.map((v) => Math.round(v * 1e6) / 1e6));
     eq('stageTable.courses', out.courses,
         { source: g.stageTable.courses.source, at: g.stageTable.courses.at });
+    /* A build this finds no objects in has to carry none, and the other way
+     * round; the keys of `kinds` and `pylons` are numbers in the profile and
+     * strings once they have been through an object, so both go through one. */
+    const canon = (v) => (Array.isArray(v) ? v.map(canon)
+        : v && typeof v === 'object'
+            ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
+            : v);
+    const objs = (o) => (o ? JSON.stringify(canon(o)) : null);
+    const gotObj = objs(out.objects), wantObj = objs(g.objects);
+    if (gotObj !== wantObj) {
+        console.log(`FAIL: objects: found ${gotObj}, profile has ${wantObj}`);
+        bad++;
+    }
     console.log(bad ? `\n${bad} failed` : '\nevery number the profile carries is one this run found');
     process.exit(bad ? 1 : 0);
 }
