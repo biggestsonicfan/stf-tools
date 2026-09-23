@@ -3,7 +3,8 @@
  *
  * Everything else here is a port measured against the board. This one is the
  * other way round: the two blobs the program ROM uploads to the ADSP-21062 have
- * been disassembled back to SHARC source in `m2-hle/disassembly`, and the claim
+ * been disassembled back to SHARC source — published, annotated, as `stf-sharc`,
+ * and worked on in `m2-hle/disassembly` — and the claim
  * that source makes is that assembling and linking it produces those blobs
  * again — not equivalent code, the same bytes. That is a claim a ROM can settle
  * on its own, so this settles it.
@@ -37,7 +38,7 @@
  * alone has nothing to disagree with.
  *
  *   node test-cpres.mjs [rom.zip]
- *   node test-cpres.mjs --disasm ../m2-hle/disassembly
+ *   node test-cpres.mjs --disasm ../stf-sharc
  *   node test-cpres.mjs --build            # assemble and link it again first
  */
 
@@ -70,10 +71,13 @@ const here = (f) => decodeURIComponent(new URL(f, import.meta.url).pathname).rep
  * file this has to read to know what the link was asked for. */
 const isDisasm = (d) => fs.existsSync(path.join(d, 'sharc.ach'));
 const given = arg('disasm', null) ?? process.env.STF_DISASM ?? null;
-const disasm = given ?? [here('../m2-hle/disassembly'), here('../../m2-hle/disassembly')].find(isDisasm);
+/* Beside this checkout, the published firmware first and the working copy it
+ * came out of after it; the line below names whichever was measured. */
+const disasm = given ?? ['../stf-sharc', '../../stf-sharc', '../m2-hle/disassembly', '../../m2-hle/disassembly']
+    .map(here).find(isDisasm);
 
 if (!disasm) {
-    console.log('no SHARC disassembly to hand — pass --disasm <m2-hle/disassembly>, or set STF_DISASM');
+    console.log('no SHARC disassembly to hand — pass --disasm <stf-sharc checkout>, or set STF_DISASM');
     process.exit(0);
 }
 /* One that was named and is not there is a mistake rather than an absence, so

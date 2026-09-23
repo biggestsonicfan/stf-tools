@@ -20,10 +20,7 @@
  */
 
 import fs from 'fs';
-import {
-    loadRomSet, readModelEntry, MODEL_TABLE_COUNT,
-    MESH_PTR_SUBTRACT, MESH_PTR_ADD,
-} from './vendor/noclip/js/romset.js';
+import { loadRomSet, readModelEntry, meshOffsetOf } from './vendor/noclip/js/romset.js';
 import { decodeModel } from './vendor/noclip/js/model.js';
 
 const ROM = process.argv[2] ?? 'sfight.zip';
@@ -43,7 +40,7 @@ const modeOf = (m, tri) => (m.flags[tri * 3] >> 5) & 3;
 {
     const seen = new Map();
     let faces = 0;
-    for (let i = 0; i < MODEL_TABLE_COUNT; i++) {
+    for (let i = 0; i < rom.game.modelTable.count; i++) {
         const m = decodeModel(rom, i);
         if (!m) continue;
         for (let t = 0; t < m.flags.length / 3; t++) {
@@ -63,7 +60,7 @@ const modeOf = (m, tri) => (m.flags[tri * 3] >> 5) & 3;
      * vertex pair, and the face emitted for group i reads pair i. */
     const attrs = (idx) => {
         const e = readModelEntry(rom, idx);
-        let off = (e.meshPtr * 4 - MESH_PTR_SUBTRACT + MESH_PTR_ADD) >>> 0;
+        let off = meshOffsetOf(rom, e);
         const out = [];
         for (let i = 0; i < 4096; i++) {
             const a = rom.polygonsView.getUint32(off + 24, true) >>> 0;
@@ -201,7 +198,7 @@ const modeOf = (m, tri) => (m.flags[tri * 3] >> 5) & 3;
     const triKey = (m, t) => [0, 1, 2].map((k) => cornerKey(m, t, k)).sort().join('|');
 
     let stacked = 0, deepest = 0;
-    for (let i = 0; i < MODEL_TABLE_COUNT; i++) {
+    for (let i = 0; i < rom.game.modelTable.count; i++) {
         const m = decodeModel(rom, i);
         if (!m) continue;
         const seen = new Map();

@@ -24,7 +24,7 @@ import {
 } from './vendor/noclip/js/motion.js';
 import { buildPose, poseMatrices, turnedBy, SLOT_COUNT, SLOT_PARENT } from './vendor/noclip/js/pose.js';
 import { decodeModel } from './vendor/noclip/js/model.js';
-import { readOsage, osageParts } from './vendor/noclip/js/osage.js';
+import { readOsage, osageParts, NO_FLOOR } from './vendor/noclip/js/osage.js';
 import { readTails, tailParts, CYCLE_LENGTH, LEAD as TAILS_LEAD } from './vendor/noclip/js/tails.js';
 import {
     readExhaust, exhaustPart, exhaustDrawn, chestModel,
@@ -36,6 +36,10 @@ import {
     HEAD_WINDOW, HEAD_PHASE_SHIFT, HEAD_STEPS, HEAD_LAST, SPIN_STEP, SPIN_FLIP_BIT,
 } from './vendor/noclip/js/eggrobo.js';
 import { disasm } from './i960dis.mjs';
+
+/* The osage record stream's type word for a frame record — the one
+ * `os_set_matrix` at 0x67D28 builds — which js/osage.js keeps to itself. */
+const OSAGE_MATRIX = 1;
 
 const ROM = process.argv[2] ?? 'sfight.zip';
 const read = (p) => {
@@ -411,8 +415,11 @@ console.log(`${playable.length} fighters have a well-formed skeleton`);
         pose[1] = chest;
         pose[2] = { r: d.bones[2].slice(0, 9), t: d.bones[2].slice(9, 12) };
 
-        /* The frame, and the board's local positions through it. */
-        const f = os.frame;
+        /* The frame, and the board's local positions through it. The record
+         * stream carries one MATRIX record per frame the chains hang in; the
+         * chest's is the first, and the one this capture was taken through. */
+        const f = os.records.find((r) => r.type === OSAGE_MATRIX);
+        if (!f) fail('the osage table carries no frame record');
         const F = turnedBy(chest.r, f.ax, f.ay, f.az);
         const FT = [0, 1, 2].map((k) =>
             chest.t[k] + F[k] * f.offset[0] + F[3 + k] * f.offset[1] + F[6 + k] * f.offset[2]);
@@ -423,7 +430,11 @@ console.log(`${playable.length} fighters have a well-formed skeleton`);
         for (const sg of d.segments) {
             if (sg.out_pos && !seen.has(sg.model)) seen.set(sg.model, toWorld(sg.out_pos));
         }
-        const ours = osageParts(pose, os);
+        /* No floor. The capture records the chain and the bones, not the
+         * fighter's height, and `os_set_osage` only clamps a segment that
+         * reaches the ring — this one never does, so a floor at y=0 would
+         * be clamping against a plane the board was not using. */
+        const ours = osageParts(pose, os, { floorY: NO_FLOOR });
         let checked = 0, worst = 0;
         for (const p of ours) {
             const want = seen.get(p.model);

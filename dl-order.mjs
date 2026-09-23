@@ -55,6 +55,7 @@ import fs from 'fs';
 import {
     loadCapture, loadRom, modelIndex, meshIndex, replayFrame,
 } from './dl-verify.mjs';
+import { CopReplay } from './cop-replay.mjs';
 
 const PREFIX = process.argv[2];
 const A = Number(process.argv[3] ?? 517);
@@ -80,6 +81,8 @@ const cap = loadCapture(PREFIX);
 const rom = await loadRom(ROM);
 const byEntry = modelIndex(rom);
 const byMesh = meshIndex(rom);
+/* One replay across the capture, as verify-stage.mjs keeps. */
+const cop = new CopReplay();
 
 /* The first draw of a model in a frame is the one that claims the pixels; a
  * model drawn more than once is reported so that assumption stays visible. */
@@ -92,7 +95,7 @@ let aFirst = 0, bFirst = 0, skipped = 0;
 const rows = [];
 
 for (const frame of cap.frames) {
-    const draws = replayFrame(frame.records, byEntry, byMesh);
+    const { draws } = replayFrame(frame.records, byEntry, byMesh, cop);
     const da = firstOf(draws, A), db = firstOf(draws, B);
     if (!da || !db) {
         skipped++;
