@@ -220,8 +220,12 @@ export function replayFrame(records, modelByEntry, modelByMesh, replay = new Cop
 
 /* ---- the viewer's side ---------------------------------------------------- */
 
-/** One op list as the board would have accumulated it — the Z flip undone. */
-export function boardMatrix(ops) {
+/**
+ * One op list as the board would have accumulated it — the Z flip undone.
+ * display.js's CAMERA_YAW (['cy']) is an ang_y by the camera's heading, which
+ * an op list does not know: `cameraYaw`, in degrees, supplies it.
+ */
+export function boardMatrix(ops, cameraYaw = null) {
     let m = I4();
     for (const [kind, v] of ops) {
         if (kind === 's') m = mul(m, scaleM(v[0], v[1], v[2]));
@@ -232,6 +236,8 @@ export function boardMatrix(ops) {
          * way a translation's Z does. */
         else if (kind === 'rz') m = mul(m, rotZ(-v));
         else if (kind === 't') m = mul(m, transM(v[0], v[1], -v[2]));
+        else if (kind === 'cy' && cameraYaw !== null) m = mul(m, rotY(cameraYaw));
+        else if (kind === 'cy') throw new Error('boardMatrix: CAMERA_YAW needs the heading of the camera');
         else throw new Error(`boardMatrix: op '${kind}' is not a matrix — split on BILLBOARD with placeAt`);
     }
     return m;
@@ -243,13 +249,14 @@ export function boardMatrix(ops) {
  * sets the 3x3 of everything accumulated so far — view included — to the
  * identity and keeps the position it has reached. What follows it applies to
  * that. So a list is cut at its first BILLBOARD, the part before it placed and
- * squared up, and the part after it multiplied on.
+ * squared up, and the part after it multiplied on. `cameraYaw` is passed to
+ * boardMatrix for a CAMERA_YAW.
  */
-export function placeAt(C, ops) {
+export function placeAt(C, ops, cameraYaw = null) {
     const b = ops.findIndex((op) => op[0] === 'b');
-    if (b < 0) return mul(C, boardMatrix(ops));
-    const p = mul(C, boardMatrix(ops.slice(0, b)));
-    return mul(transM(p[3], p[7], p[11]), boardMatrix(ops.slice(b + 1).filter((op) => op[0] !== 'b')));
+    if (b < 0) return mul(C, boardMatrix(ops, cameraYaw));
+    const p = mul(C, boardMatrix(ops.slice(0, b), cameraYaw));
+    return mul(transM(p[3], p[7], p[11]), boardMatrix(ops.slice(b + 1).filter((op) => op[0] !== 'b'), cameraYaw));
 }
 
 /* ---- loading -------------------------------------------------------------- */

@@ -60,8 +60,15 @@
  * on the viewer's side, taking the draw for the raw constants display.js calls
  * a ROM bug; that was the replay, which applied no bank loads and so never saw
  * the 1.6 arrive. m2-hle2's grade-stages.mjs found it with a replay that did.
- * The head is now compared as display.js builds it, and the missing scale
- * reads as what it is.
+ * The head is now compared as display.js builds it, which has since taken the
+ * 1.6 on.
+ *
+ * The Flying Carpet's corner posts and the flames on them turn to the camera's
+ * heading (display.js's CAMERA_YAW), an angle the capture does not record. It
+ * is recovered from the posts, the parts whose only turn to the camera is that
+ * yaw: each has to come out a pure yaw, and all of them the same one in a
+ * frame. That one heading then places the flames, so they are checked rather
+ * than excused.
  *
  * The head is also checked for what it can be against a live capture.
  * draw_sphynx_head aims it at the midpoint of the two fighters;
@@ -155,9 +162,10 @@ function viewerList(frame, strip = false) {
         const world = carriesWorld(ops, pro);
         if (strip && world) ops = ops.slice(pro.length);
         ops = quantise(ops);
-        /* A part that faces the camera (BILLBOARD) has no matrix of its own to
-         * divide out; it is only ever placed, under the base it is drawn at. */
-        const billboard = ops.some((op) => op[0] === 'b');
+        /* A part that faces the camera (BILLBOARD) or turns to its heading
+         * (CAMERA_YAW) has no matrix of its own to divide out; it is only ever
+         * placed, under the base it is drawn at and the heading of the frame. */
+        const billboard = ops.some((op) => op[0] === 'b' || op[0] === 'cy');
         return {
             i,
             layer: e.layer,
@@ -285,7 +293,33 @@ for (const fr of cap.frames) {
         const base = v.world ? worldBase : C;
         return v.layer === 'sky' ? mul(base, rotY(driftDeg)) : base;
     };
-    const predict = (v) => placeAt(pre(v), v.ops);
+    /* The camera's heading, for the parts display.js turns to it (CAMERA_YAW).
+     * The capture does not record it, so it is recovered the way C is: a part
+     * whose only turn to the camera is that yaw is drawn at pre·A·Ry(θ)·B for
+     * its ops A before it and B after, so (pre·A)⁻¹·M_board·B⁻¹ has to be a
+     * pure yaw, and every such part in the frame has to agree on it. That one
+     * θ then places everything else carrying the op, flames included. */
+    const yawVotes = new Map();
+    for (const g of stageDraws) {
+        for (const v of view) {
+            const c = v.ops.findIndex((op) => op[0] === 'cy');
+            if (c < 0 || v.model !== g.model || v.ops.some((op) => op[0] === 'b')) continue;
+            const A = inv(mul(pre(v), boardMatrix(v.ops.slice(0, c))));
+            const B = inv(boardMatrix(v.ops.slice(c + 1)));
+            if (!A || !B) continue;
+            const X = mul(mul(A, g.m), B);
+            const theta = Math.atan2(-X[2], X[0]) * 180 / Math.PI;
+            if (maxdiff(X, rotY(theta)) > EPS) continue;
+            const k = theta.toFixed(4);
+            yawVotes.set(k, { theta, n: (yawVotes.get(k)?.n ?? 0) + 1 });
+        }
+    }
+    let cameraYaw = null, yawShared = 0;
+    for (const e of yawVotes.values()) if (e.n > yawShared) { cameraYaw = e.theta; yawShared = e.n; }
+    const predict = (v) => {
+        if (cameraYaw === null && v.ops.some((op) => op[0] === 'cy')) return null;
+        return placeAt(pre(v), v.ops, cameraYaw);
+    };
 
     const claimed = new Set();
     const matched = [];
@@ -296,10 +330,17 @@ for (const fr of cap.frames) {
         let hit = null, bestErr = Infinity;
         for (const v of view) {
             if (claimed.has(v.i) || v.model !== g.model) continue;
-            const err = maxdiff(g.m, predict(v));
+            const p = predict(v);
+            const err = p ? maxdiff(g.m, p) : Infinity;
             if (err < bestErr) { bestErr = err; hit = v; }
         }
-        if (!hit) { unknown.push(g); continue; }
+        if (!hit) {
+            /* A stage part at no heading the frame agreed on is still a part. */
+            const cy = view.find((v) => !claimed.has(v.i) && v.model === g.model);
+            if (cy) { claimed.add(cy.i); off.push({ g, v: cy, err: Infinity, D: I4(), why: 'turned to no heading the frame shares' }); }
+            else unknown.push(g);
+            continue;
+        }
         claimed.add(hit.i);
         const D = mul(inv(predict(hit)) ?? I4(), g.m);
         if (bestErr <= EPS) { matched.push({ g, v: hit, err: bestErr, D }); continue; }
@@ -330,6 +371,9 @@ for (const fr of cap.frames) {
             + `routine puts it, facing ${describe(x.D)} away — it is aimed at the `
             + `fighters, which the viewer has none of`);
     }
+    if (cameraYaw !== null) {
+        console.log(`  camera heading ${cameraYaw.toFixed(3)}°, recovered from ${yawShared} parts turned to it`);
+    }
     console.log(`  ${unknown.length} further draws are not stage parts (the fighters and their shadows)`);
     console.log(`  worst residual among the parts that agree: ${worst.toExponential(2)}`);
     if (SKY_DRIFTS) console.log(`  backdrop drift: the two clocks are `
@@ -343,7 +387,7 @@ for (const fr of cap.frames) {
     for (const x of off) {
         console.log(`    x ${x.v.layer.padEnd(9)} model ${String(x.v.model).padStart(5)}`
             + ` ${x.g.via === 'geo' ? '(geo)' : '     '}`
-            + `  viewer is short by: ${describe(x.D)}`);
+            + `  viewer is short by: ${x.why ?? describe(x.D)}`);
     }
     if (process.env.DETAIL) {
         for (const x of matched.sort((a, b) => a.v.i - b.v.i)) {
