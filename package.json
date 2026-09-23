@@ -23,10 +23,11 @@
     "test:motion": "node test-motion.mjs",
     "test:motion-mame": "node test-motion-mame.mjs",
     "test:osage-mame": "node test-osage-mame.mjs",
+    "test:zanzou-mame": "node test-zanzou-mame.mjs",
     "test:canyon": "node test-canyon.mjs",
     "test:zsort": "node test-zsort.mjs",
     "test:layers": "node test-layers.mjs",
-    "test": "npm run test:romset && npm run test:csum && npm run test:cpres && npm run test:decode && npm run test:texram && npm run test:colors && npm run test:daytona-texram && npm run test:texaddr && npm run test:scroll && npm run test:carpet && npm run test:objects && npm run test:eggman && npm run test:motion && npm run test:motion-mame && npm run test:osage-mame && npm run test:canyon && npm run test:zsort && npm run test:layers"
+    "test": "npm run test:romset && npm run test:csum && npm run test:cpres && npm run test:decode && npm run test:texram && npm run test:colors && npm run test:daytona-texram && npm run test:texaddr && npm run test:scroll && npm run test:carpet && npm run test:objects && npm run test:eggman && npm run test:motion && npm run test:motion-mame && npm run test:osage-mame && npm run test:zanzou-mame && npm run test:canyon && npm run test:zsort && npm run test:layers"
   },
   "keywords": [],
   "author": "",
