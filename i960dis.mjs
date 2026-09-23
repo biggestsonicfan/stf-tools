@@ -60,11 +60,15 @@ const REG = {
     0x6c0: 'cvtri', 0x6c1: 'cvtril', 0x6c2: 'cvtzri', 0x6c3: 'cvtzril',
     0x6c9: 'movr', 0x6d9: 'movrl', 0x6e1: 'movre',
     0x6e2: 'cpysre', 0x6e3: 'cpyrsre',
-    0x701: 'mulo', 0x708: 'remo', 0x70b: 'remi', 0x70c: 'divo', 0x70e: 'divi',
-    0x741: 'muli',
+    /* The integer and real arithmetic here was checked against the opcode
+     * table Sega's own i960 disassembler carries inside Sega Racing Classic's
+     * d1a.exe (185 records at VA 0x737D40), which is how 0x70b, 0x70c, 0x70e
+     * and 0x78c were found to have been misnamed. */
+    0x701: 'mulo', 0x708: 'remo', 0x70b: 'divo',
+    0x741: 'muli', 0x748: 'remi', 0x749: 'modi', 0x74b: 'divi',
     /* The floating-point block the 3D maths runs in. */
-    0x78b: 'divr', 0x78c: 'divrl',
-    
+    0x78b: 'divr', 0x78c: 'mulr', 0x78d: 'subr', 0x78f: 'addr',
+    0x79b: 'divrl', 0x79c: 'mulrl', 0x79d: 'subrl', 0x79f: 'addrl',
 };
 
 const s32 = (v, bits) => (v << (32 - bits)) >> (32 - bits);
@@ -83,6 +87,12 @@ export function disasm(dv, addr) {
             text = 'ret';
         } else {
             target = addr + s32((w >>> 2) & 0x3fffff, 22) * 4;
+            /* The original Model 2 maps its program ROM's second 128KB twice,
+             * at 0x20000 and at 0x00220000, and Daytona runs that half from
+             * the alias — so a call from it back into the first half is a
+             * displacement of about -0x200000 and lands below zero when
+             * reckoned from the region offset. The 2A/2B games never do. */
+            if (target < 0) target += 0x200000;
             text = `${name} 0x${target.toString(16)}`;
         }
     } else if (top >= 0x20 && top <= 0x3f) {
