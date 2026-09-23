@@ -725,6 +725,45 @@ const OBJECT_KIND = {
     }
 }
 
+/* ---- the sky --------------------------------------------------------------- */
+
+/*
+ * The sky is not geometry but the tile layer's panorama, and each course's is
+ * reached through the four-course table change_course_bank indexes by
+ * sel_course: the first word of a row is the course's sky — a CG list, a
+ * palette list and eight patterns of 32 tiles, each pattern headed {0x10000,
+ * rows, 32}. The work RAM address the row is stored at moves from build to
+ * build, so the table is found by the shape of what it points at instead.
+ */
+{
+    const D = 0x02000000;
+    const word = (a) => {
+        if (a >= D && a - D + 4 <= rom.mainData.length) return rom.mainDataView.getUint32(a - D, true);
+        const o = a >= 0x200000 ? a - 0x200000 : a;
+        return o >= 0 && o + 4 <= code.length ? cv.getUint32(o, true) : NaN;
+    };
+    const isSky = (s) => {
+        for (let k = 0; k < 8; k++) {
+            const g = word(s + 8 + k * 4);
+            if (!(g >= D) || word(g) !== 0x10000 || word(g + 8) !== 32) return false;
+            const rows = word(g + 4);
+            if (!(rows > 0 && rows < 128)) return false;
+        }
+        return true;
+    };
+    const hits = [];
+    for (let a = 0; a + 16 <= code.length; a += 4) {
+        let ok = true;
+        for (let c = 0; c < 4 && ok; c++) {
+            const row = word(a + c * 4);
+            ok = row >= D && isSky(word(row));
+        }
+        if (ok) hits.push(a);
+    }
+    if (hits.length === 1) out.sky = { table: hits[0] };
+    else notes.push(`sky: ${hits.length} four-course tables of skies`);
+}
+
 /* ---- report -------------------------------------------------------------- */
 
 console.log(`set          ${ROMS.join(' + ')}`);
@@ -778,6 +817,7 @@ if (out.courses) {
     console.log(`courses      { source: '${out.courses.source}', at: ${hex(out.courses.at)} } — `
         + `${out.courseBlocks.tables} block tables at ${hex(out.courseBlocks.at)}, opening on models ${ids.join(', ')}`);
 }
+if (out.sky) console.log(`sky          { table: ${hex(out.sky.table)} }`);
 if (out.objects) {
     /* The block as js/games.js writes it: addresses in hex (as keys too),
      * counts, angles and floats as they are. */
@@ -837,6 +877,7 @@ if (CHECK) {
             ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
             : v);
     const objs = (o) => (o ? JSON.stringify(canon(o)) : null);
+    eq('sky', out.sky, g.sky);
     const gotObj = objs(out.objects), wantObj = objs(g.objects);
     if (gotObj !== wantObj) {
         console.log(`FAIL: objects: found ${gotObj}, profile has ${wantObj}`);
