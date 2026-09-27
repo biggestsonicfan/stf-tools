@@ -4,6 +4,7 @@
   "description": "Development and verification tools for the Sonic The Fighters (Sega Model 2) explorer",
   "scripts": {
     "start": "node serve.mjs",
+    "record:previews": "node record-previews.mjs",
     "test:romset": "node test-romset.mjs",
     "extract:rom": "node extract-rom.mjs",
     "test:csum": "node test-csum.mjs",
