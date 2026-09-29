@@ -50,6 +50,7 @@ const W = 640, H = 360, FPS = 30;
  *
  * `setup` runs in the page against the helpers installed further down —
  * pickStage, pickTab, pickChar, pickMotion, check — and picks what is shown.
+ * pickStage and pickMotion take a list position or a pattern on the text.
  * `cam` runs in the page every frame and returns { eye, at } in world units;
  * both are source, since they are shipped over to the page as text. `f` is the
  * bounding sphere the explorer framed the setup on, { c, r }, captured once, so
@@ -89,11 +90,13 @@ const SHOTS = {
         },
         {
             name: 'fighter', seconds: 6,
-            /* Sonic in a move that leaves afterimages, the camera circling him. */
+            /* Sonic playing a string as the game strings it — a sidestep that
+             * leaves afterimages, then three kicks, each taking over at the
+             * last one's cancel frame — the camera circling him. */
             setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
-                check('#char-skel', false); await pickMotion(72);`,
+                check('#char-skel', false); await pickMotion(/^yokel_kkk /);`,
             cam: `(t, f) => { const c = track();
-                return { eye: [c[0] + f.r * 1.4 * Math.sin(t * 0.8), c[1] + f.r * 0.15, c[2] + f.r * 1.4 * Math.cos(t * 0.8)],
+                return { eye: [c[0] + f.r * 1.7 * Math.sin(t * 0.8), c[1] + f.r * 0.15, c[2] + f.r * 1.7 * Math.cos(t * 0.8)],
                          at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
         },
     ],
@@ -221,7 +224,15 @@ await page.evaluate(() => {
             await select('#stage-select', o.value);
         },
         pickChar: (i) => select('#char-select', i),
-        pickMotion: (i) => select('#motion-select', $('#motion-select').options[i].value),
+        /* By position in the list, or by a pattern on the option's text: the
+         * list opens with the fighter's moves, so a position shifts whenever
+         * what is listed above it does. */
+        pickMotion: (which) => {
+            const opts = [...$('#motion-select').options];
+            const o = typeof which === 'number' ? opts[which] : opts.find((x) => which.test(x.textContent));
+            if (!o) throw new Error(`no motion ${which}`);
+            return select('#motion-select', o.value);
+        },
         ring: (f, a, d, h) => [f.c[0] + f.r * d * Math.sin(a), f.c[1] + f.r * h, f.c[2] + f.r * d * Math.cos(a)],
         track: () => {
             /* A fighter's part is one mesh; a HOTD body's part keeps a slot
@@ -294,11 +305,16 @@ for (const shot of SHOTS[game]) {
     for (let i = 0; i < frames; i++) {
         const jpg = await page.evaluate((src, t) => {
             const v = window.stf.viewer;
+            /* The pose first, then the camera on it, then the picture drawn
+             * again at the same instant: a camera placed ahead of the step
+             * tracks the last frame's pose, a whole move behind where a
+             * motion snaps back to its start. */
+            if (t > 0) window.__clock.step(1000 / 30);
             const { eye, at } = eval(src)(t, window.__frame);
             v.camera.position.set(...eye);
             v.camera.lookAt(...at);
             v.frameFar();
-            window.__clock.step(1000 / 30);
+            window.__clock.step(0);
             return v.canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
         }, shot.cam, i / FPS);
         const buf = Buffer.from(jpg, 'base64');
