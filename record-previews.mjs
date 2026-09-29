@@ -305,11 +305,16 @@ for (const shot of SHOTS[game]) {
     for (let i = 0; i < frames; i++) {
         const jpg = await page.evaluate((src, t) => {
             const v = window.stf.viewer;
+            /* The pose first, then the camera on it, then the picture drawn
+             * again at the same instant: a camera placed ahead of the step
+             * tracks the last frame's pose, a whole move behind where a
+             * motion snaps back to its start. */
+            if (t > 0) window.__clock.step(1000 / 30);
             const { eye, at } = eval(src)(t, window.__frame);
             v.camera.position.set(...eye);
             v.camera.lookAt(...at);
             v.frameFar();
-            window.__clock.step(1000 / 30);
+            window.__clock.step(0);
             return v.canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
         }, shot.cam, i / FPS);
         const buf = Buffer.from(jpg, 'base64');
