@@ -35,15 +35,24 @@ are the explorer's. `B:` marks paths in segamodel2-tools.
     half between both sheets by rectangle.
   - Sonic The Fighters decompresses Huffman pages (TECHNICAL.md).
 
-  segamodel2-tools already names Sega Rally's upload routine (`0x3940`, jump
-  table `0x5A2880`) but does not port it. The Daytona and HOTD ports are the
-  pattern to follow.
+  Sega Rally does it the Daytona way, from a table. Its routine at `0x3940`
+  deals a bank out by the run table at `0x5A2880` (ROM `0x3880`). That table
+  stops after mip level 5, level 5's rows come to `0x1F0` halfwords instead of
+  `0x200`, and levels 6–8 are never uploaded. Bank 0 goes onto sheet 0 at boot.
+  Each course's bank goes onto sheet 1, picked by the course variant at
+  `0x214354` from the table at ROM `0x3dcf0`. Ported and checked against
+  MAME's texture RAM (srallyc, two courses, 0 differing halfwords) in
+  [xandoxan65/segamodel2-tools#2](https://github.com/xandoxan65/segamodel2-tools/pull/2).
+  The flat copy's full-size area was already right. What it had wrong were
+  the mip rows and every course but the desert on sheet 1.
 - **Header bit `0x1000` selects a sheet.** It means the full-size level is on
   sheet 1, and the mip chain alternates sheets level by level (TECHNICAL.md,
-  `js/viewer.js`). segamodel2-tools strips the bit and adds a +4 Y fix for
-  billboards (`B:tools/model2_texture.py:183-200`), which looks like a symptom
-  of the flat bank copy above. `stored_to_logical` (`:225`) is not the inverse
-  of the x≥1024 fold that `get_texel` makes either.
+  `js/viewer.js`; MAME `model2_v.cpp` swaps `texsheet` on it). segamodel2-tools
+  strips the bit and adds a +4 Y fix for billboards
+  (`B:tools/model2_texture.py:183-200`). That fix is *not* explained by the
+  bank loading: the full-size area it reads was already correct. It is still
+  open. `stored_to_logical` (`:225`) is not the inverse of the x≥1024 fold
+  that `get_texel` makes either.
 - **Mip levels and LOD.** segamodel2-tools reads only level 0.
 
 ### Colour
@@ -87,8 +96,9 @@ are the explorer's. `B:` marks paths in segamodel2-tools.
 
 ### i960 lifter bugs
 
-Each of these gives a different result from the board. Fixing them against
-checks tied to the ROM would catch them.
+Each of these gives a different result from the board. 1–3 are fixed in
+liftkit by
+[xandoxan65/segamodel2-tools#1](https://github.com/xandoxan65/segamodel2-tools/pull/1).
 
 1. **`cmpib*`/`cmpob*` compare only the low byte.** The `b` means *branch*;
    these compare all 32 bits. `B:tools/decomp/i960_ops.py:30-51` casts both
