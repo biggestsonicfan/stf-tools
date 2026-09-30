@@ -15,6 +15,8 @@
  *
  *   node record-previews.mjs --game stf  sfight.zip [schamp.zip]
  *   node record-previews.mjs --game hotdp hotdp.zip
+ *   node record-previews.mjs --game hotdp --build hotdp hotd.zip   (a merged set)
+ *   node record-previews.mjs --game daytona daytona.zip
  *   node record-previews.mjs --game stf --list sfight.zip
  *
  * --list prints the stages, characters and motions the set loaded with, which
@@ -100,6 +102,69 @@ const SHOTS = {
                          at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
         },
     ],
+    hotd: [
+        {
+            name: 'mansion', seconds: 6,
+            /* Low over Stage 1's third set: the mansion's lit rooms. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.5 + t * 0.15, 0.6, 0.25), at: f.c })`,
+        },
+        {
+            name: 'stage2', seconds: 6,
+            /* Chapter 2's sixth set under its band of cloud. */
+            setup: `await pickStage(5);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.2 + t * 0.12, 1.0, 0.4), at: f.c })`,
+        },
+        {
+            name: 'body', seconds: 6,
+            /* BO_tetuman, the zombie with a blade for an arm. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(53);
+                check('#char-skel', false); await pickMotion(0);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 0.75 * Math.sin(t * 0.8), c[1] + f.r * 0.05, c[2] + f.r * 0.75 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
+        },
+    ],
+    daytona: [
+        {
+            name: 'speedway', seconds: 6,
+            /* Three-Seven Speedway, the grid on the line, circling low. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.12, 0.3, 0.07), at: f.c })`,
+        },
+        {
+            name: 'canyon', seconds: 6,
+            /* Dinosaur Canyon from above its rock. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.0 + t * 0.1, 0.45, 0.12), at: f.c })`,
+        },
+        {
+            name: 'seaside', seconds: 6,
+            /* Seaside Street Galaxy along the water. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: ring(f, 4.0 + t * 0.1, 0.4, 0.1), at: f.c })`,
+        },
+    ],
+    fvipers: [
+        {
+            name: 'arena', seconds: 6,
+            /* The first arena's walled yard, circled from just over the wall. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.2, 0.75, 0.25), at: f.c })`,
+        },
+        {
+            name: 'sunset', seconds: 6,
+            /* The same yard at sunset, as another arena's record draws it. */
+            setup: `await pickStage(4);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.4 - t * 0.2, 0.7, 0.2), at: f.c })`,
+        },
+        {
+            name: 'ring', seconds: 6,
+            /* A roped ring under its signs. */
+            setup: `await pickStage(8);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.0 + t * 0.2, 1.5, 0.5), at: f.c })`,
+        },
+    ],
     hotdp: [
         {
             name: 'room', seconds: 6,
@@ -131,13 +196,15 @@ const argv = process.argv.slice(2);
 const opt = (k) => { const i = argv.indexOf(k); return i < 0 ? null : argv.splice(i, 2)[1]; };
 const flag = (k) => { const i = argv.indexOf(k); return i < 0 ? false : (argv.splice(i, 1), true); };
 const game = opt('--game');
+const build = opt('--build');
 const only = opt('--only');
 const list = flag('--list');
+const gpu = flag('--gpu');
 const stills = flag('--stills');
 const OUT = path.resolve(opt('--out') ?? (process.env.STF_SITE
     ? path.join(ROOT, 'media/previews') : path.join(os.tmpdir(), 'stf-previews')));
 const zips = argv.map((z) => path.resolve(z));
-if (!game || !zips.length || (!list && !SHOTS[game])) {
+if (!game || !zips.length || (!list && !stills && !SHOTS[game])) {
     console.error('usage: node record-previews.mjs --game <stf|hotdp|...> [--list] [--stills] [--only shot] [--out dir] zip...');
     process.exit(2);
 }
@@ -166,7 +233,11 @@ const chrome = process.env.CHROME ?? [
 ].find((p) => fs.existsSync(p));
 const browser = await puppeteer.launch({
     executablePath: chrome, headless: true,
-    args: ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--use-angle=swiftshader', '--no-sandbox'],
+    /* --gpu draws on the real card through Mesa's D3D12 driver under WSL, far
+     * faster than SwiftShader; it needs GALLIUM_DRIVER=d3d12 and
+     * LD_LIBRARY_PATH=/usr/lib/wsl/lib in the environment. */
+    args: gpu ? ['--ignore-gpu-blocklist', '--use-angle=gl', '--no-sandbox']
+        : ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--use-angle=swiftshader', '--no-sandbox'],
 });
 const page = await browser.newPage();
 await page.setViewport({ width: W, height: H });
@@ -203,6 +274,21 @@ await page.waitForFunction(() => window.stf?.viewer || !document.querySelector('
 const failed = await page.evaluate(() => !document.querySelector('#loader-error').hidden
     && document.querySelector('#loader-error').textContent);
 if (failed) { console.error('load failed:', failed); process.exit(1); }
+
+/* A merged archive loads as one build and offers the rest in the panel's Build
+ * picker: --build swaps to another, the way a visitor would. The clock is still
+ * free here, so the reload paints and finishes on its own. */
+if (build) {
+    const ok = await page.evaluate((id) => {
+        const sel = document.querySelector('#build-select');
+        if (![...sel.options].some((o) => o.value === id)) return [...sel.options].map((o) => o.value).join(', ');
+        sel.value = id; sel.dispatchEvent(new Event('change'));
+        return true;
+    }, build);
+    if (ok !== true) { console.error(`no build ${build} in this set (${ok || 'it has one'})`); process.exit(1); }
+    await page.waitForFunction((id) => window.stf.rom?.game.id === id && document.querySelector('#loader').hidden
+        && window.stf.stages.length, { timeout: 300000 }, build);
+}
 
 /* Only the view: the panel, the corner tools and the HUD are not the preview. */
 await page.addStyleTag({ content: '#sidebar, #tools, #hud, #fly-hint, #link-note { display: none !important; }' });
