@@ -1,0 +1,4 @@
+qt960link/*.sh text eol=lf
+qt960link/qtlink/*.sh text eol=lf
+qt960link/*.py text eol=lf
+qt960link/*.lua text eol=lf

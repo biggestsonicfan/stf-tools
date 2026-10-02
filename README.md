@@ -154,6 +154,7 @@ The imports in the scripts themselves spell the full path out.
 | `inspect-si.mjs` | dumps the South Island tables and model bounds used to work out the stage draw list |
 | `dump-linear.mjs` | renders a linear 4-bit block of any ROM region as a PNG, for looking at a block whose layout is not yet known |
 | `dumpbank.mjs`, `png.mjs` | decode each 1 MB window of the texture ROM as a Model 2 sheet and write it as a PNG (`png.mjs` writes the greyscale one that wants and the RGBA one `extract-scroll.mjs` does). This is what established that the sheets are packed rather than raw — see the Textures section of TECHNICAL.md |
+| `qt960link/` | the i960 itself checked against an i960: a QT960 eval board (i960KB, NINDY) and a Model 2B running m2-kernel, both in MAME for now, run the same instruction on the same operands over a serial link and compare the answers. `qt960link/run.sh` shows the two boards side by side; `qtlink_host.py` is the PC end for a real QT960 on a cable. See `qt960link/README.md` |
 
 `shot.mjs` / `shots.mjs` need `npm install` (they use `puppeteer-core` against
 the installed Edge) and a running `serve.mjs`. `record-previews.mjs` needs the
