@@ -17,6 +17,7 @@
  *   node record-previews.mjs --game hotdp hotdp.zip
  *   node record-previews.mjs --game hotdp --build hotdp hotd.zip   (a merged set)
  *   node record-previews.mjs --game daytona daytona.zip
+ *   node record-previews.mjs --game vcop vcop.zip     (likewise vf2, doa)
  *   node record-previews.mjs --game stf --list sfight.zip
  *
  * --list prints the stages, characters and motions the set loaded with, which
@@ -163,6 +164,88 @@ const SHOTS = {
             /* A roped ring under its signs. */
             setup: `await pickStage(8);`,
             cam: `(t, f) => ({ eye: ring(f, 1.0 + t * 0.2, 1.5, 0.5), at: f.c })`,
+        },
+    ],
+    /* Virtua Cop opens a stage on its rail rather than framed from outside,
+     * so its clips ride the rail: `rail(n)` is the camera at count n, which
+     * the board steps once a frame at 60 Hz, so two counts a clip frame. */
+    vcop: [
+        {
+            name: 'warehouse', seconds: 6,
+            /* Stage 1 from the start, into the warehouse yard. */
+            setup: `await pickStage(0);`,
+            cam: `(t) => rail(t * 60)`,
+        },
+        {
+            name: 'site', seconds: 6,
+            /* Stage 2 across the building site under its red sky. */
+            setup: `await pickStage(1);`,
+            cam: `(t) => rail(t * 60)`,
+        },
+        {
+            name: 'tower', seconds: 6,
+            /* Stage 3 up to the tower. */
+            setup: `await pickStage(2);`,
+            cam: `(t) => rail(t * 60)`,
+        },
+    ],
+    vf2: [
+        {
+            name: 'islands', seconds: 6,
+            /* The Islands' ring on its spit of sand. */
+            setup: `await pickStage(6);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.55, 0.25), at: f.c })`,
+        },
+        {
+            name: 'wall', seconds: 6,
+            /* Ban-ri, the ring on the Great Wall. */
+            setup: `await pickStage(5);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.6 + t * 0.15, 0.6, 0.25), at: f.c })`,
+        },
+        {
+            name: 'snow', seconds: 6,
+            /* Yuki-yama's ring cut into the snow mountain. */
+            setup: `await pickStage(9);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.15, 0.6, 0.3), at: f.c })`,
+        },
+        {
+            name: 'fighter', seconds: 6,
+            /* Akira on his own rig. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(14);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.4 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.4 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
+        },
+    ],
+    doa: [
+        {
+            name: 'palace', seconds: 6,
+            /* Stage 3's walled court under the clouds. */
+            setup: `await pickStage(3);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.6, 0.25), at: f.c })`,
+        },
+        {
+            name: 'sunset', seconds: 6,
+            /* Stage 11's ring of rock against the orange sky. */
+            setup: `await pickStage(11);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.2 + t * 0.15, 0.6, 0.2), at: f.c })`,
+        },
+        {
+            name: 'city', seconds: 6,
+            /* Stage 10's rooftop over the city at night. */
+            setup: `await pickStage(10);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.4 + t * 0.12, 0.6, 0.25), at: f.c })`,
+        },
+        {
+            name: 'fighter', seconds: 6,
+            /* Kasumi on her own rig. The list skips the fighters the set
+             * has no rig for, so she is picked by her place in it. */
+            setup: `await pickTab('anim'); await pickChar($('#char-select').options[4].value);
+                check('#char-skel', false); await pickMotion(30);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.0 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.0 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
         },
     ],
     hotdp: [
@@ -320,6 +403,15 @@ await page.evaluate(() => {
             return select('#motion-select', o.value);
         },
         ring: (f, a, d, h) => [f.c[0] + f.r * d * Math.sin(a), f.c[1] + f.r * h, f.c[2] + f.r * d * Math.cos(a)],
+        /* The stage's rail camera at count n, between the counts either side
+         * of it, held at the rail's end. */
+        rail: (n) => {
+            const r = window.stf.stages[window.stf.stageIndex].railPath;
+            const i = Math.min(Math.floor(n), r.count - 2), u = Math.min(n - i, 1);
+            const a = r.at(i), b = r.at(i + 1);
+            const mix = (p, q) => p.map((x, k) => x + (q[k] - x) * u);
+            return { eye: mix(a.eye, b.eye), at: mix(a.at, b.at) };
+        },
         track: () => {
             /* A fighter's part is one mesh; a HOTD body's part keeps a slot
              * per model it has drawn. */
