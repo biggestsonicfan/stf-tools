@@ -18,11 +18,15 @@
  *   node record-previews.mjs --game hotdp --build hotdp hotd.zip   (a merged set)
  *   node record-previews.mjs --game daytona daytona.zip
  *   node record-previews.mjs --game vcop vcop.zip     (likewise vf2, doa)
+ *   node record-previews.mjs --game von vonj.zip von.zip
+ *   node record-previews.mjs --game srallyc srallyc.zip (likewise dynamcop,
+ *                                                       airwlkrs, powsled)
  *   node record-previews.mjs --game stf --list sfight.zip
  *
  * --list prints the stages, characters and motions the set loaded with, which
  * is what the shot tables below index, and --stills saves every stage as the
- * explorer frames it, to pick shots from. --only NAME records one shot. Needs
+ * explorer frames it, to pick shots from (with --models A-B, the models in that
+ * range, for a game with only a Models tab). --only NAME records one shot. Needs
  * puppeteer-core (a dev dependency), Chrome or Edge ($CHROME overrides the
  * search) and ffmpeg with libx264 on the PATH.
  *
@@ -248,6 +252,107 @@ const SHOTS = {
                          at: [c[0], c[1] + f.r * 0.1, c[2]] }; }`,
         },
     ],
+    srallyc: [
+        {
+            name: 'forest', seconds: 6,
+            /* The Forest course winding through its trees, low over the road. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.5 + t * 0.12, 0.45, 0.12), at: f.c })`,
+        },
+        {
+            name: 'desert', seconds: 6,
+            /* The Desert course under its blue sky. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.0 + t * 0.12, 0.35, 0.18), at: [f.c[0], f.c[1] + f.r * 0.1, f.c[2]] })`,
+        },
+        {
+            name: 'mountain', seconds: 6,
+            /* The Mountain course against its snowy peaks. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.6 + t * 0.12, 0.35, 0.18), at: [f.c[0], f.c[1] + f.r * 0.1, f.c[2]] })`,
+        },
+    ],
+    /* Virtual-On's fields, from inside their walls. vonj is a clone: drop
+     * von.zip on beside it. */
+    von: [
+        {
+            name: 'airport', seconds: 6,
+            setup: `await pickStage(/airport/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.45, 0.12), at: f.c })`,
+        },
+        {
+            name: 'deathtrap', seconds: 6,
+            setup: `await pickStage(/death trap/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.6 + t * 0.15, 0.5, 0.2), at: f.c })`,
+        },
+        {
+            name: 'secretbase', seconds: 6,
+            setup: `await pickStage(/secret base/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.15, 0.45, 0.15), at: f.c })`,
+        },
+    ],
+    dynamcop: [
+        {
+            name: 'ballroom', seconds: 6,
+            /* Course 2-1, area 18: the ship's ballroom and its tables. */
+            setup: `await pickStage(/Course 2-1, area 18$/);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.5, 0.2), at: f.c })`,
+        },
+        {
+            name: 'harbour', seconds: 6,
+            /* Course 4-1, area 29: the boats in the cave harbour. */
+            setup: `await pickStage(/Course 4-1, area 29$/);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.2 + t * 0.12, 0.8, 0.3), at: f.c })`,
+        },
+        {
+            name: 'deck', seconds: 6,
+            /* Course 4-2, area 49: out on the deck at night. */
+            setup: `await pickStage(/Course 4-2, area 49$/);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.8 + t * 0.12, 0.6, 0.25), at: f.c })`,
+        },
+    ],
+    /* Air Walkers and Power Sled have only the Models tab so far: their clips
+     * circle one model each. */
+    airwlkrs: [
+        {
+            name: 'city', seconds: 6,
+            /* Model 555, the city the intro flies over. */
+            setup: `await pickModel(555);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.4 + t * 0.2, 1.0, 0.4), at: f.c })`,
+        },
+        {
+            name: 'mascot', seconds: 6,
+            /* Model 506, a team's hippo mascot. */
+            setup: `await pickModel(506);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.8 + t * 0.5, 1.5, 0.2), at: f.c })`,
+        },
+        {
+            name: 'trophy', seconds: 6,
+            /* Model 291, the trophy. */
+            setup: `await pickModel(291);`,
+            cam: `(t, f) => ({ eye: ring(f, t * 0.5, 1.6, 0.3), at: f.c })`,
+        },
+    ],
+    powsled: [
+        {
+            name: 'sled', seconds: 6,
+            /* Model 274, the yellow sled. */
+            setup: `await pickModel(274);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.5, 1.4, 0.35), at: f.c })`,
+        },
+        {
+            name: 'penguin', seconds: 6,
+            /* Model 295, the penguin. */
+            setup: `await pickModel(295);`,
+            cam: `(t, f) => ({ eye: ring(f, t * 0.5, 1.5, 0.2), at: f.c })`,
+        },
+        {
+            name: 'ice', seconds: 6,
+            /* Model 281, a crag of ice off the course. */
+            setup: `await pickModel(281);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.4, 1.5, 0.3), at: f.c })`,
+        },
+    ],
     hotdp: [
         {
             name: 'room', seconds: 6,
@@ -284,6 +389,7 @@ const only = opt('--only');
 const list = flag('--list');
 const gpu = flag('--gpu');
 const stills = flag('--stills');
+const models = opt('--models');
 const OUT = path.resolve(opt('--out') ?? (process.env.STF_SITE
     ? path.join(ROOT, 'media/previews') : path.join(os.tmpdir(), 'stf-previews')));
 const zips = argv.map((z) => path.resolve(z));
@@ -393,6 +499,14 @@ await page.evaluate(() => {
             await select('#stage-select', o.value);
         },
         pickChar: (i) => select('#char-select', i),
+        /* A model in the Models tab by its table index, for a game with no
+         * stages to fly; `set` picks a texture set where the tab offers one. */
+        pickModel: async (i, set) => {
+            await pickTab('model');
+            if (set !== undefined) await select('#model-texset', set);
+            const n = $('#model-search'); n.value = String(i); n.dispatchEvent(new Event('input'));
+            await tick();
+        },
         /* By position in the list, or by a pattern on the option's text: the
          * list opens with the fighter's moves, so a position shifts whenever
          * what is listed above it does. */
@@ -431,6 +545,22 @@ await page.evaluate(() => {
 if (stills) {
     const dir = path.join(os.tmpdir(), 'noclip-stills');
     fs.mkdirSync(dir, { recursive: true });
+    /* --models A-B: the models in that range instead, each named with its
+     * face count, for a game whose only tab is Models. */
+    if (models) {
+        const [lo, hi] = models.split('-').map(Number);
+        for (let i = lo; i <= (hi ?? lo); i++) {
+            const got = await page.evaluate(async (i) => {
+                await pickModel(i); window.__clock.step(1000 / 30);
+                const faces = +($('#model-info').textContent.match(/(\d+) faces/)?.[1] ?? 0);
+                return faces && [faces, window.stf.viewer.canvas.toDataURL('image/jpeg', 0.8).split(',')[1]];
+            }, i);
+            if (got) fs.writeFileSync(`${dir}/${game}-m${String(i).padStart(5, '0')}-f${got[0]}.jpg`, Buffer.from(got[1], 'base64'));
+        }
+        console.log(`stills in ${dir}`);
+        await browser.close(); server.close();
+        process.exit(0);
+    }
     const n = await page.evaluate(() => $('#stage-select').options.length);
     for (let i = 0; i < n; i++) {
         const jpg = await page.evaluate(async (i) => {
