@@ -20,7 +20,7 @@
  *   node record-previews.mjs --game vcop vcop.zip     (likewise vf2, doa)
  *   node record-previews.mjs --game von vonj.zip von.zip
  *   node record-previews.mjs --game srallyc srallyc.zip (likewise dynamcop,
- *                                                       airwlkrs, powsled)
+ *                                       airwlkrs, powsled, lastbrnx, pltkids)
  *   node record-previews.mjs --game stf --list sfight.zip
  *
  * --list prints the stages, characters and motions the set loaded with, which
@@ -311,46 +311,107 @@ const SHOTS = {
             cam: `(t, f) => ({ eye: ring(f, 0.8 + t * 0.12, 0.6, 0.25), at: f.c })`,
         },
     ],
-    /* Air Walkers and Power Sled have only the Models tab so far: their clips
-     * circle one model each. */
+    /* Air Walkers' courts, one a team, and a player on the Animation tab. */
     airwlkrs: [
         {
-            name: 'city', seconds: 6,
-            /* Model 555, the city the intro flies over. */
-            setup: `await pickModel(555);`,
-            cam: `(t, f) => ({ eye: ring(f, 0.4 + t * 0.2, 1.0, 0.4), at: f.c })`,
+            name: 'court', seconds: 6,
+            /* Seattle Velocity's home court, low over the floor. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.45, 0.12), at: f.c })`,
         },
         {
-            name: 'mascot', seconds: 6,
-            /* Model 506, a team's hippo mascot. */
-            setup: `await pickModel(506);`,
-            cam: `(t, f) => ({ eye: ring(f, 0.8 + t * 0.5, 1.5, 0.2), at: f.c })`,
+            name: 'stands', seconds: 6,
+            /* New York Stars' court from up in the stands. */
+            setup: `await pickStage(10);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.0 + t * 0.12, 0.6, 0.25), at: f.c })`,
         },
         {
-            name: 'trophy', seconds: 6,
-            /* Model 291, the trophy. */
-            setup: `await pickModel(291);`,
-            cam: `(t, f) => ({ eye: ring(f, t * 0.5, 1.6, 0.3), at: f.c })`,
+            name: 'player', seconds: 6,
+            /* A Seattle Velocity player on his own rig. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(9);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.2 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.2 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
         },
     ],
+    /* Power Sled's one course, a scene at a time as the race draws it (the
+     * Zone list's views, each framed on its scene), and an attract ride. */
     powsled: [
         {
-            name: 'sled', seconds: 6,
-            /* Model 274, the yellow sled. */
-            setup: `await pickModel(274);`,
-            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.5, 1.4, 0.35), at: f.c })`,
+            name: 'start', seconds: 6,
+            /* The start, under the cranes that hold the sleds. */
+            setup: `await pickStage(0); await pickView('zone:0');`,
+            cam: `(t) => { const f = viewFrame('zone:0'); return { eye: ring(f, 0.6 + t * 0.12, 0.8, 0.3), at: f.c }; }`,
         },
         {
-            name: 'penguin', seconds: 6,
-            /* Model 295, the penguin. */
-            setup: `await pickModel(295);`,
-            cam: `(t, f) => ({ eye: ring(f, t * 0.5, 1.5, 0.2), at: f.c })`,
+            name: 'tunnel', seconds: 6,
+            /* The tunnel through the ice. */
+            setup: `await pickStage(0); await pickView('zone:2');`,
+            cam: `(t) => { const f = viewFrame('zone:2'); return { eye: ring(f, 2.4 + t * 0.12, 0.8, 0.3), at: f.c }; }`,
         },
         {
-            name: 'ice', seconds: 6,
-            /* Model 281, a crag of ice off the course. */
-            setup: `await pickModel(281);`,
-            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.4, 1.5, 0.3), at: f.c })`,
+            name: 'bridges', seconds: 6,
+            /* The bridges over the gorge. */
+            setup: `await pickStage(0); await pickView('zone:4');`,
+            cam: `(t) => { const f = viewFrame('zone:4'); return { eye: ring(f, 0.8 + t * 0.12, 0.8, 0.3), at: f.c }; }`,
+        },
+        {
+            name: 'ride', seconds: 6,
+            /* An attract ride scene: two riders on the yellow sled. */
+            setup: `await pickTab('anim'); await pickChar(0); await pickChar(12);
+                check('#char-skel', false); await pickMotion(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.3, 1.2, 0.3), at: f.c })`,
+        },
+    ],
+    /* Last Bronx's stages, and a fighter. A stage is framed with its
+     * skyline, so the ring is pulled in close to the floor. */
+    lastbrnx: [
+        {
+            name: 'parking', seconds: 6,
+            setup: `await pickStage(/parking/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.2, 0.06), at: f.c })`,
+        },
+        {
+            name: 'garden', seconds: 6,
+            setup: `await pickStage(/garden/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.6 + t * 0.15, 0.2, 0.06), at: f.c })`,
+        },
+        {
+            name: 'street', seconds: 6,
+            setup: `await pickStage(/cross street/i);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.15, 0.25, 0.1), at: f.c })`,
+        },
+        {
+            name: 'fighter', seconds: 6,
+            /* Yoko's win pose on her own rig. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(/^ton_win_05/);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.2 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.2 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
+        },
+    ],
+    /* Pilot Kids has only the Models tab so far: its clips circle one
+     * model each. */
+    pltkids: [
+        {
+            name: 'pilot', seconds: 6,
+            /* Model 4024, one of the kid pilots. */
+            setup: `await pickModel(4024);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.5, 1.4, 0.2), at: f.c })`,
+        },
+        {
+            name: 'viking', seconds: 6,
+            /* Model 2695, the horned boss. */
+            setup: `await pickModel(2695);`,
+            cam: `(t, f) => ({ eye: ring(f, t * 0.5, 1.4, 0.25), at: f.c })`,
+        },
+        {
+            name: 'dog', seconds: 6,
+            /* Model 3418, a dog. */
+            setup: `await pickModel(3418);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.5, 1.4, 0.2), at: f.c })`,
         },
     ],
     hotdp: [
@@ -430,7 +491,7 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 await page.setViewport({ width: W, height: H });
-page.on('pageerror', (e) => console.error('page:', e.message));
+page.on('pageerror', (e) => console.error('page:', e.stack ?? e.message));
 
 /* The clock, replaced before any of the page's modules run. It runs free while
  * the set loads, since the loader yields to a frame to paint its progress, and
@@ -498,6 +559,9 @@ await page.evaluate(() => {
             if (!o) throw new Error(`no stage ${which}`);
             await select('#stage-select', o.value);
         },
+        /* A view of the stage, by its value (Power Sled's `zone:2`): one
+         * with a camera of its own frames it. */
+        pickView: (v) => select('#view-select', v),
         pickChar: (i) => select('#char-select', i),
         /* A model in the Models tab by its table index, for a game with no
          * stages to fly; `set` picks a texture set where the tab offers one. */
@@ -515,6 +579,13 @@ await page.evaluate(() => {
             const o = typeof which === 'number' ? opts[which] : opts.find((x) => which.test(x.textContent));
             if (!o) throw new Error(`no motion ${which}`);
             return select('#motion-select', o.value);
+        },
+        /* The sphere a stage view's own camera frames (Power Sled's
+         * scenes): its centre where the camera looks, and its radius from
+         * how far back the camera stands. */
+        viewFrame: (v) => {
+            const { eye, at } = window.stf.stages[window.stf.stageIndex].cameras[v];
+            return { c: at, r: Math.hypot(eye[0] - at[0], eye[1] - at[1], eye[2] - at[2]) / 2 };
         },
         ring: (f, a, d, h) => [f.c[0] + f.r * d * Math.sin(a), f.c[1] + f.r * h, f.c[2] + f.r * d * Math.cos(a)],
         /* The stage's rail camera at count n, between the counts either side
