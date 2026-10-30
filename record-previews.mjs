@@ -20,13 +20,20 @@
  *   node record-previews.mjs --game vcop vcop.zip     (likewise vf2, doa)
  *   node record-previews.mjs --game von vonj.zip von.zip
  *   node record-previews.mjs --game srallyc srallyc.zip (likewise dynamcop,
- *                                       airwlkrs, powsled, lastbrnx, pltkids)
+ *                                       airwlkrs, powsled, lastbrnx, pltkids,
+ *                                       motoraid, vcop2, vstriker, manxtt,
+ *                                       stcc, sgt24h, dynabb, gunblade, zerogun,
+ *                                       skytargt, skisuprg, waverunr, segawski,
+ *                                       topskatr, bel, desert)
+ *   node record-previews.mjs --game indy500 indy500d.zip indy500.zip (likewise
+ *                                       overrev with overrevb.zip, overrev.zip)
  *   node record-previews.mjs --game stf --list sfight.zip
  *
  * --list prints the stages, characters and motions the set loaded with, which
  * is what the shot tables below index, and --stills saves every stage as the
  * explorer frames it, to pick shots from (with --models A-B, the models in that
- * range, for a game with only a Models tab). --only NAME records one shot. Needs
+ * range, or every S-th of it with A-B/S, for a game with only a Models tab).
+ * --only NAME records one shot. Needs
  * puppeteer-core (a dev dependency), Chrome or Edge ($CHROME overrides the
  * search) and ffmpeg with libx264 on the PATH.
  *
@@ -414,6 +421,282 @@ const SHOTS = {
             cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.5, 1.4, 0.2), at: f.c })`,
         },
     ],
+    /* The racing games below have no rail: most of their clips fly along
+     * the road the course draws, a little above it (course(), below). Where
+     * that path wanders off the road (Manx TT's TT course, Indy 500's oval,
+     * STCC) the clip circles the whole course from high up instead. */
+    motoraid: [
+        {
+            name: 'snow', seconds: 6,
+            /* The snowy pass. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'island', seconds: 6,
+            /* The island course by the sea. */
+            setup: `await pickStage(3);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    vcop2: [
+        {
+            name: 'city', seconds: 6,
+            /* Down the city streets of the first stage. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.05), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'pier', seconds: 6,
+            /* Along the pier of the second. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.03, f, 0.05), at: course(0.25 + t * 0.03, f, 0) })`,
+        },
+    ],
+    /* Virtua Striker's ground, from the stands and down on the pitch. */
+    vstriker: [
+        {
+            name: 'stands', seconds: 6,
+            /* Up in the stands. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.5, 0.15), at: f.c })`,
+        },
+        {
+            name: 'pitch', seconds: 6,
+            /* Low over the grass. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.0 + t * 0.15, 0.25, 0.06), at: f.c })`,
+        },
+    ],
+    manxtt: [
+        {
+            name: 'laxey', seconds: 6,
+            /* The Laxey course. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'tt', seconds: 6,
+            /* The TT course over the island. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.12, 0.7, 0.35), at: f.c })`,
+        },
+    ],
+    /* indy500d is a clone: drop indy500.zip on beside it. */
+    indy500: [
+        {
+            name: 'bayside', seconds: 6,
+            /* The Bayside street circuit. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'speedway', seconds: 6,
+            /* Round the Speedway oval. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.12, 0.7, 0.35), at: f.c })`,
+        },
+    ],
+    stcc: [
+        {
+            name: 'brickwall', seconds: 6,
+            /* The Brickwall Town circuit. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.12, 0.7, 0.35), at: f.c })`,
+        },
+        {
+            name: 'country', seconds: 6,
+            /* The Country circuit. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.12, 0.7, 0.35), at: f.c })`,
+        },
+    ],
+    sgt24h: [
+        {
+            name: 'short', seconds: 6,
+            /* The short circuit. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'long', seconds: 6,
+            /* The long circuit. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    /* overrevb is a clone: drop overrev.zip on beside it. */
+    overrev: [
+        {
+            name: 'shibuya', seconds: 6,
+            /* Through Shibuya. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'futou', seconds: 6,
+            /* Along the wharf. */
+            setup: `await pickStage(3);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.1), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    /* Dynamite Baseball's ballpark, from the stands and on the field. */
+    dynabb: [
+        {
+            name: 'dome', seconds: 6,
+            /* Up under the dome. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.5, 0.15), at: f.c })`,
+        },
+        {
+            name: 'stadium', seconds: 6,
+            /* Low over the diamond. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: ring(f, 2.0 + t * 0.15, 0.25, 0.06), at: f.c })`,
+        },
+    ],
+    /* Gunblade NY's enemies on their own rigs. */
+    gunblade: [
+        {
+            name: 'figure', seconds: 6,
+            /* The first figure in the list. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(6);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.3 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.3 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
+        },
+        {
+            name: 'mohawk', seconds: 6,
+            /* The punk with the mohawk. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(12);
+                check('#char-skel', false); await pickMotion(6);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.3 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.3 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
+        },
+    ],
+    zerogun: [
+        {
+            name: 'asia', seconds: 6,
+            /* Flying over Asia, the first stage. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.15), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'america', seconds: 6,
+            /* Over America. */
+            setup: `await pickStage(6);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.15), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    /* Sky Target's stages, circled from above. */
+    skytargt: [
+        {
+            name: 'hokkaido', seconds: 6,
+            /* Over Hokkaido. */
+            setup: `await pickStage(3);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 0.5, 0.2), at: f.c })`,
+        },
+        {
+            name: 'gake', seconds: 6,
+            /* Over the cliffs. */
+            setup: `await pickStage(6);`,
+            cam: `(t, f) => ({ eye: ring(f, 1.6 + t * 0.15, 0.5, 0.2), at: f.c })`,
+        },
+    ],
+    /* Ski Super G has only the Models tab so far. */
+    skisuprg: [
+        {
+            name: 'slope', seconds: 6,
+            /* Model 4875, a stretch of slope. */
+            setup: `await pickModel(4875);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.6 + t * 0.15, 1.4, 0.2), at: f.c })`,
+        },
+        {
+            name: 'finish', seconds: 6,
+            /* Model 5496, the finish banner. */
+            setup: `await pickModel(5496);`,
+            cam: `(t, f) => ({ eye: ring(f, 0.3 + t * 0.5, 1.4, 0.2), at: f.c })`,
+        },
+    ],
+    waverunr: [
+        {
+            name: 'cove', seconds: 6,
+            /* Low across the water of the cove. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.08), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'bay', seconds: 6,
+            /* Across the bay. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.08), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    segawski: [
+        {
+            name: 'park', seconds: 6,
+            /* The park course. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.08), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'lagoon', seconds: 6,
+            /* The lagoon course. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.08), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
+    topskatr: [
+        {
+            name: 'easy', seconds: 6,
+            /* The Easy course. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.04), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'hidden', seconds: 6,
+            /* Indoors on the Hidden course. */
+            setup: `await pickStage(2);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.03, f, 0.04), at: course(0.25 + t * 0.03, f, 0) })`,
+        },
+    ],
+    /* Behind Enemy Lines' soldiers on their own rigs. */
+    bel: [
+        {
+            name: 'run', seconds: 6,
+            /* A soldier running. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(5);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.3 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.3 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
+        },
+        {
+            name: 'soldier', seconds: 6,
+            /* The same soldier hit and going down. */
+            setup: `await pickTab('anim'); await pickChar(1); await pickChar(0);
+                check('#char-skel', false); await pickMotion(1);`,
+            cam: `(t, f) => { const c = track();
+                return { eye: [c[0] + f.r * 1.3 * Math.sin(t * 0.8), c[1] + f.r * 0.1, c[2] + f.r * 1.3 * Math.cos(t * 0.8)],
+                         at: [c[0], c[1] + f.r * 0.05, c[2]] }; }`,
+        },
+    ],
+    desert: [
+        {
+            name: 'desert', seconds: 6,
+            /* Across the open desert. */
+            setup: `await pickStage(0);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.12), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+        {
+            name: 'canyon', seconds: 6,
+            /* Through the canyon. */
+            setup: `await pickStage(1);`,
+            cam: `(t, f) => ({ eye: course(0.15 + t * 0.06, f, 0.12), at: course(0.25 + t * 0.06, f, 0) })`,
+        },
+    ],
     hotdp: [
         {
             name: 'room', seconds: 6,
@@ -597,6 +880,42 @@ await page.evaluate(() => {
             const mix = (p, q) => p.map((x, k) => x + (q[k] - x) * u);
             return { eye: mix(a.eye, b.eye), at: mix(a.at, b.at) };
         },
+        /* A point on a path through the stage's geometry at u (0..1), for a
+         * course too long and thin to circle: the drawn vertices cut into
+         * slices along the stage's longest level axis, each slice's median
+         * point, smoothed. Built once per stage. `lift` raises it by that
+         * much of the framed radius. */
+        course: (u, f, lift = 0) => {
+            const st = window.stf.stages[window.stf.stageIndex];
+            if (window.__course?.stage !== st) {
+                const pts = [];
+                const v = new window.stf.viewer.camera.position.constructor();
+                window.stf.viewer.scene.traverse((o) => {
+                    if (!o.isMesh || !o.visible || !o.geometry?.attributes?.position) return;
+                    const a = o.geometry.attributes.position;
+                    o.updateWorldMatrix(true, false);
+                    for (let i = 0; i < a.count; i += 3) {
+                        v.fromBufferAttribute(a, i).applyMatrix4(o.matrixWorld);
+                        pts.push([v.x, v.y, v.z]);
+                    }
+                });
+                const span = (k) => { let lo = Infinity, hi = -Infinity; for (const p of pts) { lo = Math.min(lo, p[k]); hi = Math.max(hi, p[k]); } return [lo, hi]; };
+                const sx = span(0), sz = span(2);
+                const k = sx[1] - sx[0] >= sz[1] - sz[0] ? 0 : 2, [lo, hi] = k ? sz : sx;
+                const N = 48, bins = Array.from({ length: N }, () => []);
+                for (const p of pts) bins[Math.min(N - 1, Math.floor((p[k] - lo) / (hi - lo) * N))].push(p);
+                const med = (b, j) => b.map((p) => p[j]).sort((x, y) => x - y)[b.length >> 1];
+                let path = bins.filter((b) => b.length > 8).map((b) => [0, 1, 2].map((j) => med(b, j)));
+                for (let pass = 0; pass < 3; pass++)
+                    path = path.map((p, i) => p.map((x, j) => (path[Math.max(0, i - 1)][j] + x * 2 + path[Math.min(path.length - 1, i + 1)][j]) / 4));
+                window.__course = { stage: st, path };
+            }
+            const path = window.__course.path, s = Math.max(0, Math.min(1, u)) * (path.length - 1);
+            const i = Math.min(Math.floor(s), path.length - 2), w = s - i;
+            const p = path[i].map((x, j) => x + (path[i + 1][j] - x) * w);
+            p[1] += f.r * lift;
+            return p;
+        },
         track: () => {
             /* A fighter's part is one mesh; a HOTD body's part keeps a slot
              * per model it has drawn. */
@@ -617,10 +936,12 @@ if (stills) {
     const dir = path.join(os.tmpdir(), 'noclip-stills');
     fs.mkdirSync(dir, { recursive: true });
     /* --models A-B: the models in that range instead, each named with its
-     * face count, for a game whose only tab is Models. */
+     * face count, for a game whose only tab is Models. A-B/S takes every
+     * S-th, to skim a big table. */
     if (models) {
-        const [lo, hi] = models.split('-').map(Number);
-        for (let i = lo; i <= (hi ?? lo); i++) {
+        const [range, step] = models.split('/');
+        const [lo, hi] = range.split('-').map(Number);
+        for (let i = lo; i <= (hi ?? lo); i += Number(step ?? 1)) {
             const got = await page.evaluate(async (i) => {
                 await pickModel(i); window.__clock.step(1000 / 30);
                 const faces = +($('#model-info').textContent.match(/(\d+) faces/)?.[1] ?? 0);
